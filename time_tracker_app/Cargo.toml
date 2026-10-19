@@ -1,0 +1,11 @@
+[package]
+name = "time_tracker_app"
+version = "0.1.0"
+edition = "2021"
+authors = ["Jeveson Francisco Iensen <jevesoniensen@gmail.com>"]
+license = "Apache-2.0"
+
+[dependencies]
+time_tracker_event_reader = { path = "../time_tracker_event_reader" }
+tao = "0.30"
+wry = "0.47"

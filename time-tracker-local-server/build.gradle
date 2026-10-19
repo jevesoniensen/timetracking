@@ -1,0 +1,52 @@
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '4.1.1'
+	id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.timetracker'
+version = '0.0.1-SNAPSHOT'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(25)
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-webflux'
+	implementation 'com.fasterxml.jackson.core:jackson-databind'
+	testImplementation 'org.springframework.boot:spring-boot-starter-webflux-test'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+}
+
+task buildReactApp(type: Exec) {
+    workingDir '../time-tracker-ui'
+
+    if (System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('windows')) {
+        // We inject the venv Scripts directory into the PATH for this task execution
+        // so that both 'npm' and 'node' can be successfully located by the system.
+        def venvScripts = file('../venv/Scripts').absolutePath
+        environment 'PATH', "${venvScripts};" + System.getenv('PATH')
+        commandLine 'cmd', '/c', 'npm install && npm run build'
+    } else {
+        def venvBin = file('../venv/bin').absolutePath
+        environment 'PATH', "${venvBin}:" + System.getenv('PATH')
+        commandLine 'sh', '-c', 'npm install && npm run build'
+    }
+}
+task copyReactBuild(type: Sync) {
+    dependsOn buildReactApp
+    from '../time-tracker-ui/dist'
+    into 'src/main/resources/static'
+}
+
+processResources.dependsOn(copyReactBuild)

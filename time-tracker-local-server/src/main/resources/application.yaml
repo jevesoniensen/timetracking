@@ -1,0 +1,18 @@
+spring:
+  application:
+    name: time-tracker-local-server
+  config:
+    import:
+      - optional:classpath:config.properties
+      - optional:file:./config.properties
+  web:
+    resources:
+      cache:
+        cachecontrol:
+          no-cache: true
+
+lunch:
+  default:
+    start: "12:30"
+    end: "13:30"
+
