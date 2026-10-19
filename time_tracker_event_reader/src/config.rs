@@ -61,6 +61,12 @@ impl From<&Path> for Config {
     }
 }
 
+impl From<&PathBuf> for Config {
+    fn from(p: &PathBuf) -> Self {
+        Self::new(p)
+    }
+}
+
 impl From<&Config> for Config {
     fn from(c: &Config) -> Self {
         c.clone()
