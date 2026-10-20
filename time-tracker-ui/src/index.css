@@ -575,6 +575,78 @@ body {
   color: #fca5a5;
 }
 
+.work-table tbody tr.table-row.vacation-row {
+  background-color: rgba(139, 92, 246, 0.08);
+}
+
+.work-table tbody tr.table-row.vacation-row:hover {
+  background-color: rgba(139, 92, 246, 0.14);
+}
+
+.work-table tbody tr.table-row.vacation-row .date-primary {
+  color: #c4b5fd;
+}
+
+.vacation-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.22rem 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: rgba(139, 92, 246, 0.16);
+  color: #c4b5fd;
+  border: 1px solid rgba(139, 92, 246, 0.35);
+}
+
+.vacation-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: rgba(139, 92, 246, 0.14);
+  color: #c4b5fd;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.vacation-count-chip {
+  background: rgba(139, 92, 246, 0.14) !important;
+  color: #c4b5fd !important;
+  border-color: rgba(139, 92, 246, 0.35) !important;
+  font-weight: 600;
+}
+
+.mark-vacation-row-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.18rem 0.45rem;
+  border-radius: var(--radius-sm);
+  border: 1px dashed transparent;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 0.68rem;
+  font-weight: 600;
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.15s ease;
+}
+
+.work-table tbody tr.table-row:hover .mark-vacation-row-btn {
+  opacity: 0.75;
+  border-color: rgba(139, 92, 246, 0.3);
+}
+
+.mark-vacation-row-btn:hover {
+  opacity: 1 !important;
+  color: #c4b5fd;
+  border-color: rgba(139, 92, 246, 0.5) !important;
+  background: rgba(139, 92, 246, 0.14);
+}
+
 .work-table tbody tr.table-row.row-expanded {
   background-color: rgba(30, 41, 65, 0.6);
 }
@@ -622,6 +694,58 @@ body {
 }
 
 /* Time Pills */
+.time-cell-wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.quick-clock-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.quick-clock-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+.quick-clock-btn.start-now-btn {
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+.quick-clock-btn.start-now-btn:hover {
+  background: rgba(16, 185, 129, 0.25);
+  border-color: #10b981;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.35);
+  transform: scale(1.06);
+}
+
+.quick-clock-btn.end-now-btn {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.quick-clock-btn.end-now-btn:hover {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: #ef4444;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.35);
+  transform: scale(1.06);
+}
+
 .time-pill {
   display: inline-flex;
   align-items: center;
@@ -967,6 +1091,12 @@ body {
 .badge-muted {
   background: rgba(148, 163, 184, 0.1);
   color: #94a3b8;
+}
+
+.badge-vacation {
+  background: rgba(139, 92, 246, 0.16);
+  color: #c4b5fd;
+  border: 1px solid rgba(139, 92, 246, 0.35);
 }
 
 .pulse {

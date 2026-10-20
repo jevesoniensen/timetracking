@@ -85,6 +85,8 @@ impl EventReader for FileEventReader {
             return Ok(map);
         }
 
+        let start_work_date = self.config.effective_start_work_date();
+
         for entry in fs::read_dir(&events_dir)? {
             let entry = entry?;
             let path = entry.path();
@@ -93,9 +95,26 @@ impl EventReader for FileEventReader {
                     // Match pattern: events-yyyy-mm.json
                     if file_name.starts_with("events-") && file_name.ends_with(".json") {
                         let month_key = &file_name[7..file_name.len() - 5]; // extracts "yyyy-mm"
+                        if let Some(ref start_date) = start_work_date {
+                            if start_date.len() >= 7 && month_key < &start_date[..7] {
+                                continue;
+                            }
+                        }
                         let content = fs::read_to_string(&path)?;
                         if let Ok(events) = serde_json::from_str::<Vec<Event>>(&content) {
-                            map.insert(month_key.to_string(), events);
+                            let filtered: Vec<Event> = match &start_work_date {
+                                Some(start_date) => events
+                                    .into_iter()
+                                    .filter(|ev| {
+                                        ev.timestamp.len() >= 10
+                                            && &ev.timestamp[..10] >= start_date.as_str()
+                                    })
+                                    .collect(),
+                                None => events,
+                            };
+                            if !filtered.is_empty() {
+                                map.insert(month_key.to_string(), filtered);
+                            }
                         }
                     }
                 }

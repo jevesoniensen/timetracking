@@ -1,3 +1,4 @@
+use std::fs;
 use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
@@ -5,6 +6,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Config {
     pub base_path: PathBuf,
+    #[serde(default)]
+    pub start_work_date: Option<String>,
 }
 
 impl Config {
@@ -12,7 +15,52 @@ impl Config {
     pub fn new(base_path: impl Into<PathBuf>) -> Self {
         Self {
             base_path: base_path.into(),
+            start_work_date: None,
         }
+    }
+
+    /// Sets an explicit start work date (`YYYY-MM-DD`). Events before this date are ignored.
+    pub fn with_start_work_date(mut self, start_work_date: impl Into<String>) -> Self {
+        let s = start_work_date.into();
+        let trimmed = s.trim().to_string();
+        self.start_work_date = if trimmed.is_empty() { None } else { Some(trimmed) };
+        self
+    }
+
+    /// Returns the path to `config.properties` (`<base_path>/config.properties`).
+    pub fn config_properties_path(&self) -> PathBuf {
+        self.base_path.join("config.properties")
+    }
+
+    /// Returns the configured `start_work_date`, or reads `work.start.date` from `<base_path>/config.properties` if present.
+    pub fn effective_start_work_date(&self) -> Option<String> {
+        if let Some(ref date) = self.start_work_date {
+            let trimmed = date.trim();
+            if trimmed.len() >= 10 {
+                return Some(trimmed[..10].to_string());
+            }
+        }
+
+        let props_path = self.config_properties_path();
+        if let Ok(content) = fs::read_to_string(props_path) {
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with('#') || trimmed.is_empty() {
+                    continue;
+                }
+                if let Some(rest) = trimmed.strip_prefix("work.start.date") {
+                    let rest = rest.trim_start();
+                    if let Some(val) = rest.strip_prefix('=') {
+                        let val = val.trim();
+                        if val.len() >= 10 {
+                            return Some(val[..10].to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        None
     }
 
     /// Returns the path to the events directory (`<base_path>/events`).

@@ -2,6 +2,7 @@ import type {
   TrackerEvent,
   DaySummary,
   MonthSummary,
+  OverallSaldoSummary,
   DayStatus,
   LunchConfig,
   DayOverride,
@@ -12,6 +13,7 @@ export const DEFAULT_LUNCH_CONFIG: LunchConfig = {
   defaultLunchStart: '12:30',
   defaultLunchEnd: '13:30',
   defaultWorkHoursPerDay: 8,
+  startWorkDate: '',
 };
 
 export function formatTime(timestamp: string): string {
@@ -24,10 +26,6 @@ export function normalize24hTime(timeStr: string): string {
   if (parts.length < 2) return timeStr.trim();
   const hh = parts[0].padStart(2, '0');
   const mm = parts[1].padStart(2, '0');
-  if (parts.length >= 3) {
-    const ss = parts[2].padStart(2, '0');
-    return `${hh}:${mm}:${ss}`;
-  }
   return `${hh}:${mm}`;
 }
 
@@ -40,6 +38,12 @@ export function formatDuration(seconds: number): string {
     return `${minutes}m`;
   }
   return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+}
+
+export function formatSignedBalance(balanceSeconds: number): string {
+  if (balanceSeconds === 0) return '0m';
+  const sign = balanceSeconds > 0 ? '+' : '-';
+  return `${sign}${formatDuration(Math.abs(balanceSeconds))}`;
 }
 
 export function getMonthLabel(monthKey: string): string {
@@ -198,10 +202,52 @@ export function parsePipeDelimitedEvents(rawText: string): Record<string, Tracke
 }
 
 /**
+ * Expands a single date or inclusive date range (YYYY-MM-DD) into an array of YYYY-MM-DD strings.
+ */
+export function expandVacationDateRange(
+  startDateStr: string,
+  endDateStr?: string,
+  excludeWeekends = true,
+  startWorkDate = ''
+): string[] {
+  const sTrim = startDateStr.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(sTrim)) return [];
+  const eTrim =
+    endDateStr && /^\d{4}-\d{2}-\d{2}$/.test(endDateStr.trim())
+      ? endDateStr.trim()
+      : sTrim;
+
+  const [sStart, sEnd] = sTrim <= eTrim ? [sTrim, eTrim] : [eTrim, sTrim];
+  const [sy, sm, sd] = sStart.split('-').map(Number);
+  const [ey, em, ed] = sEnd.split('-').map(Number);
+
+  const cur = new Date(sy, sm - 1, sd);
+  const end = new Date(ey, em - 1, ed);
+  const dates: string[] = [];
+
+  while (cur.getTime() <= end.getTime()) {
+    const yyyy = cur.getFullYear();
+    const mm = String(cur.getMonth() + 1).padStart(2, '0');
+    const dd = String(cur.getDate()).padStart(2, '0');
+    const dateStr = `${yyyy}-${mm}-${dd}`;
+    const dow = cur.getDay(); // 0 = Sun, 6 = Sat
+    const isWeekend = dow === 0 || dow === 6;
+
+    if ((!startWorkDate || dateStr >= startWorkDate) && (!excludeWeekends || !isWeekend)) {
+      dates.push(dateStr);
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+
+  return dates;
+}
+
+/**
  * Parses pipe-delimited override/exception files:
  * - Custom break: 2026-09-03|17:00:00|18:20:00
  * - Start override: OVERRIDE_IN|2026-09-09|07:49:05
  * - End override: OVERRIDE_OUT|2026-09-09|17:18:00
+ * - Vacation: VACATION|2026-09-15 or VACATION|2026-09-15|2026-09-19
  */
 export function parsePipeDelimitedOverrides(rawText: string): {
   overridesByDate: Record<string, DayOverride>;
@@ -218,13 +264,30 @@ export function parsePipeDelimitedOverrides(rawText: string): {
     if (!trimmed || !trimmed.includes('|')) continue;
 
     const parts = trimmed.split('|');
-    if (parts.length < 3) continue;
+    if (parts.length < 2) continue;
 
     const p0 = parts[0].trim();
     const p1 = parts[1].trim();
-    const p2 = parts[2].trim();
+    const p2 = parts.length >= 3 ? parts[2].trim() : '';
 
-    if (p0.toUpperCase() === 'OVERRIDE_IN' && /^\d{4}-\d{2}-\d{2}$/.test(p1) && p2) {
+    if (
+      (p0.toUpperCase() === 'VACATION' || p0.toUpperCase() === 'OVERRIDE_VACATION') &&
+      /^\d{4}-\d{2}-\d{2}$/.test(p1)
+    ) {
+      const isRange = /^\d{4}-\d{2}-\d{2}$/.test(p2) && p2 !== p1;
+      const dates = expandVacationDateRange(p1, isRange ? p2 : p1, isRange);
+      for (const date of dates) {
+        monthSet.add(date.slice(0, 7));
+        const existing = overridesByDate[date] || {};
+        overridesByDate[date] = {
+          ...existing,
+          vacation: true,
+        };
+      }
+      if (dates.length > 0) {
+        lineCount++;
+      }
+    } else if (parts.length >= 3 && p0.toUpperCase() === 'OVERRIDE_IN' && /^\d{4}-\d{2}-\d{2}$/.test(p1) && p2) {
       const date = p1;
       monthSet.add(date.slice(0, 7));
       const existing = overridesByDate[date] || {};
@@ -233,7 +296,7 @@ export function parsePipeDelimitedOverrides(rawText: string): {
         start: p2,
       };
       lineCount++;
-    } else if (p0.toUpperCase() === 'OVERRIDE_OUT' && /^\d{4}-\d{2}-\d{2}$/.test(p1) && p2) {
+    } else if (parts.length >= 3 && p0.toUpperCase() === 'OVERRIDE_OUT' && /^\d{4}-\d{2}-\d{2}$/.test(p1) && p2) {
       const date = p1;
       monthSet.add(date.slice(0, 7));
       const existing = overridesByDate[date] || {};
@@ -242,7 +305,7 @@ export function parsePipeDelimitedOverrides(rawText: string): {
         end: p2,
       };
       lineCount++;
-    } else if (/^\d{4}-\d{2}-\d{2}$/.test(p0) && p1 && p2) {
+    } else if (parts.length >= 3 && /^\d{4}-\d{2}-\d{2}$/.test(p0) && p1 && p2) {
       const date = p0;
       monthSet.add(date.slice(0, 7));
       const existing = overridesByDate[date] || {};
@@ -282,16 +345,29 @@ export function processEventsByMonth(
     lunchConfig.defaultWorkHoursPerDay && lunchConfig.defaultWorkHoursPerDay > 0
       ? lunchConfig.defaultWorkHoursPerDay
       : 8;
+  const startWorkDate =
+    lunchConfig.startWorkDate && /^\d{4}-\d{2}-\d{2}$/.test(lunchConfig.startWorkDate.trim())
+      ? lunchConfig.startWorkDate.trim()
+      : '';
+  const startWorkMonthKey = startWorkDate ? startWorkDate.slice(0, 7) : '';
 
-  // Also include months that only exist in userOverrides
+  // Also include months that exist in userOverrides, startWorkDate, or the current month
   const allMonthKeys = new Set<string>(Object.keys(eventsByMonth));
   for (const dateKey of Object.keys(userOverrides)) {
     if (dateKey.length >= 7) {
       allMonthKeys.add(dateKey.slice(0, 7));
     }
   }
+  if (startWorkMonthKey && startWorkMonthKey <= todayMonthKey) {
+    allMonthKeys.add(startWorkMonthKey);
+  }
+  if (!startWorkDate || todayStr >= startWorkDate) {
+    allMonthKeys.add(todayMonthKey);
+  }
 
-  const sortedMonthKeys = Array.from(allMonthKeys).sort((a, b) => b.localeCompare(a));
+  const sortedMonthKeys = Array.from(allMonthKeys)
+    .filter((mKey) => !startWorkMonthKey || mKey >= startWorkMonthKey)
+    .sort((a, b) => b.localeCompare(a));
 
   for (const monthKey of sortedMonthKeys) {
     const events = eventsByMonth[monthKey] || [];
@@ -301,24 +377,27 @@ export function processEventsByMonth(
     for (const ev of events) {
       if (!ev.timestamp || ev.timestamp.length < 10) continue;
       const dateStr = ev.timestamp.slice(0, 10);
+      if (startWorkDate && dateStr < startWorkDate) continue;
       if (!dayMap[dateStr]) {
         dayMap[dateStr] = [];
       }
       dayMap[dateStr].push(ev);
     }
 
-    // Generate calendar days of this month, excluding future days (> todayStr)
+    // Generate calendar days of this month, excluding future days (> todayStr) and days before startWorkDate
     const [yearNum, monthNum] = monthKey.split('-').map(Number);
     const allDatesSet = new Set<string>();
     const isCurrentOrPastMonth = monthKey <= todayMonthKey;
 
     for (const dKey of Object.keys(dayMap)) {
+      if (startWorkDate && dKey < startWorkDate) continue;
       if (!isCurrentOrPastMonth || dKey <= todayStr) {
         allDatesSet.add(dKey);
       }
     }
     for (const oKey of Object.keys(userOverrides)) {
-      if (oKey.startsWith(monthKey) && (!isCurrentOrPastMonth || oKey <= todayStr)) {
+      if (startWorkDate && oKey < startWorkDate) continue;
+      if (oKey.startsWith(monthKey)) {
         allDatesSet.add(oKey);
       }
     }
@@ -329,8 +408,11 @@ export function processEventsByMonth(
       for (let day = 1; day <= daysInMonth; day++) {
         const ddStr = String(day).padStart(2, '0');
         const candidateDate = `${yearNum}-${mmStr}-${ddStr}`;
-        if (isCurrentOrPastMonth && candidateDate > todayStr) {
-          continue; // Do not show future days
+        if (startWorkDate && candidateDate < startWorkDate) {
+          continue; // Do not show days before startWorkDate
+        }
+        if (candidateDate > todayStr) {
+          continue; // Do not auto-generate future days unless explicitly in userOverrides as vacation
         }
         allDatesSet.add(candidateDate);
       }
@@ -339,6 +421,7 @@ export function processEventsByMonth(
     const daySummaries: DaySummary[] = [];
     let monthTotalSeconds = 0;
     let activeDaysCount = 0;
+    let vacationDaysCount = 0;
     let expectedWorkDaysCount = 0;
     const startSecondsList: number[] = [];
     const endSecondsList: number[] = [];
@@ -363,6 +446,10 @@ export function processEventsByMonth(
         shutdowns.length > 0 ? shutdowns[shutdowns.length - 1] : null;
 
       const dayOverride = userOverrides[dateStr];
+      const isVacation = Boolean(dayOverride?.vacation);
+      if (isVacation) {
+        vacationDaysCount++;
+      }
       const overrideStart =
         dayOverride?.start && dayOverride.start.trim()
           ? normalize24hTime(dayOverride.start)
@@ -406,7 +493,7 @@ export function processEventsByMonth(
       let lunchDeductedSeconds = 0;
       let customBreaksDeductedSeconds = 0;
       let durationSeconds = 0;
-      let status: DayStatus = 'no_startup';
+      let status: DayStatus = isVacation ? 'vacation' : 'no_startup';
 
       if (effectiveStartTimestamp && effectiveEndTimestamp) {
         const startMillis = parseDateTime(effectiveStartTimestamp).getTime();
@@ -423,11 +510,11 @@ export function processEventsByMonth(
           lunchDeductedSeconds = deductions.lunchDeductedSeconds;
           customBreaksDeductedSeconds = deductions.customBreaksDeductedSeconds;
           durationSeconds = Math.max(0, grossDurationSeconds - deductions.totalDeductedSeconds);
-          status = 'completed';
+          status = isVacation ? 'vacation' : 'completed';
         } else {
           // If shutdown occurred before the startup (e.g., morning shutdown after overnight run)
           durationSeconds = 0;
-          status = 'completed';
+          status = isVacation ? 'vacation' : 'completed';
         }
       } else if (effectiveStartTimestamp && !effectiveEndTimestamp) {
         if (dateStr === todayStr) {
@@ -450,21 +537,21 @@ export function processEventsByMonth(
           status = 'no_shutdown';
         }
       } else if (!effectiveStartTimestamp && effectiveEndTimestamp) {
-        status = 'no_startup';
+        status = isVacation ? 'vacation' : 'no_startup';
       } else {
-        status = 'no_startup';
+        status = isVacation ? 'vacation' : 'no_startup';
       }
 
-      // Do not consider today for overall monthly calculations
-      const isToday = dateStr === todayStr;
-      if (!isToday) {
+      // Do not consider today or future scheduled vacation days for past monthly calculations
+      const isTodayOrFuture = dateStr >= todayStr;
+      if (!isTodayOrFuture) {
         if (durationSeconds > 0) {
           monthTotalSeconds += durationSeconds;
         }
         if (firstStartup !== null || isStartOverridden) {
           activeDaysCount++;
         }
-        if (!isWeekend) {
+        if (!isWeekend && !isVacation) {
           expectedWorkDaysCount++;
         }
         if (effectiveStartTimestamp) {
@@ -500,12 +587,17 @@ export function processEventsByMonth(
         ? 'In Progress'
         : '—';
 
+      const dayExpectedSeconds =
+        isWeekend || isVacation || dateStr > todayStr ? 0 : Math.round(hoursPerDay * 3600);
+      const dayBalanceSeconds = durationSeconds - dayExpectedSeconds;
+
       daySummaries.push({
         date: dateStr,
         dayOfWeek,
         dayOfWeekFull,
         formattedDate,
         isWeekend,
+        isVacation,
         firstStartup,
         lastShutdown,
         startWorkTime,
@@ -521,6 +613,9 @@ export function processEventsByMonth(
         lunchDeductedFormatted: formatDuration(lunchDeductedSeconds),
         durationSeconds,
         durationFormatted: formatDuration(durationSeconds),
+        expectedWorkSeconds: dayExpectedSeconds,
+        workBalanceSeconds: dayBalanceSeconds,
+        workBalanceFormatted: formatSignedBalance(dayBalanceSeconds),
         status,
         allEvents: dayEvents,
         sessionCount: dayEvents.filter((e) => e.name.toUpperCase() === 'STARTUP').length,
@@ -538,11 +633,7 @@ export function processEventsByMonth(
 
     const expectedWorkSeconds = Math.round(expectedWorkDaysCount * hoursPerDay * 3600);
     const workBalanceSeconds = monthTotalSeconds - expectedWorkSeconds;
-    const balanceSign = workBalanceSeconds >= 0 ? '+' : '-';
-    const workBalanceFormatted =
-      workBalanceSeconds === 0
-        ? '0m'
-        : `${balanceSign}${formatDuration(Math.abs(workBalanceSeconds))}`;
+    const workBalanceFormatted = formatSignedBalance(workBalanceSeconds);
 
     result[monthKey] = {
       monthKey,
@@ -556,12 +647,44 @@ export function processEventsByMonth(
       workBalanceSeconds,
       workBalanceFormatted,
       activeDaysCount,
+      vacationDaysCount,
       avgStartWork: formatAverageSecondsToTime(avgStartSeconds),
       avgEndWork: formatAverageSecondsToTime(avgEndSeconds),
     };
   }
 
   return result;
+}
+
+export function calculateOverallSaldo(months: MonthSummary[]): OverallSaldoSummary {
+  let totalWorkSeconds = 0;
+  let expectedWorkDaysCount = 0;
+  let expectedWorkSeconds = 0;
+  let activeDaysCount = 0;
+  let vacationDaysCount = 0;
+
+  for (const m of months) {
+    totalWorkSeconds += m.totalWorkSeconds;
+    expectedWorkDaysCount += m.expectedWorkDaysCount;
+    expectedWorkSeconds += m.expectedWorkSeconds;
+    activeDaysCount += m.activeDaysCount;
+    vacationDaysCount += m.vacationDaysCount;
+  }
+
+  const workBalanceSeconds = totalWorkSeconds - expectedWorkSeconds;
+
+  return {
+    monthsCount: months.length,
+    totalWorkSeconds,
+    totalWorkFormatted: formatDuration(totalWorkSeconds),
+    expectedWorkDaysCount,
+    expectedWorkSeconds,
+    expectedWorkFormatted: formatDuration(expectedWorkSeconds),
+    workBalanceSeconds,
+    workBalanceFormatted: formatSignedBalance(workBalanceSeconds),
+    activeDaysCount,
+    vacationDaysCount,
+  };
 }
 
 function endMillisOrNow(startMillis: number, nowMillis: number): number {

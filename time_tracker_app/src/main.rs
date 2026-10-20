@@ -1,9 +1,17 @@
+#![windows_subsystem = "windows"]
+
 use std::net::{SocketAddr, TcpStream};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
+
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 use tao::event::{Event, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
@@ -92,13 +100,11 @@ fn spawn_server() -> Result<Child, String> {
     cmd.arg("-jar")
         .arg(&jar)
         .stdin(Stdio::null())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit());
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
 
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
 
@@ -134,6 +140,7 @@ fn stop_server(server: &Mutex<Option<Child>>) {
             // Forcefully terminate the Java process and its entire process tree
             let _ = Command::new("taskkill")
                 .args(["/F", "/T", "/PID", &pid.to_string()])
+                .creation_flags(CREATE_NO_WINDOW)
                 .output();
         }
 
@@ -155,6 +162,7 @@ fn kill_orphaned_server_if_port_busy() {
         );
         let _ = Command::new("powershell")
             .args(["-NoProfile", "-Command", &script])
+            .creation_flags(CREATE_NO_WINDOW)
             .output();
         thread::sleep(Duration::from_millis(500));
     }
@@ -166,6 +174,12 @@ const DEFAULT_CONFIG_CONTENT: &str = "\
 # The overlapping portion with the work interval is deducted from daily worked hours.
 lunch.default.start=12:30
 lunch.default.end=13:30
+
+# Default expected working hours per day
+work.default.hours.per.day=8
+
+# Start work date (YYYY-MM-DD). Leave empty to be prompted on first app startup.
+work.start.date=
 ";
 
 fn ensure_default_config(app_dir: & std::path::Path) {

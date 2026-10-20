@@ -213,7 +213,9 @@ export const UploadModal: React.FC<UploadModalProps> = ({
               <pre className="format-code">
 {`2026-09-03|17:00:00|18:20:00
 OVERRIDE_IN|2026-09-09|07:49:05
-OVERRIDE_OUT|2026-09-09|17:18:00`}
+OVERRIDE_OUT|2026-09-09|17:18:00
+VACATION|2026-09-15
+VACATION|2026-09-21|2026-09-25`}
               </pre>
             ) : (
               <pre className="format-code">

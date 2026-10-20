@@ -16,6 +16,8 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.DayOfWeek;
+import java.time.LocalDate;
 import java.util.*;
 
 @RestController
@@ -35,15 +37,22 @@ public class EventController {
     @Value("${work.default.hours.per.day:8}")
     private double fallbackWorkHoursPerDay;
 
+    @Value("${work.start.date:}")
+    private String fallbackStartWorkDate;
+
     public record TrackerEvent(String name, String timestamp) {}
 
-    public record LunchConfig(String defaultLunchStart, String defaultLunchEnd, double defaultWorkHoursPerDay) {}
+    public record LunchConfig(String defaultLunchStart, String defaultLunchEnd, double defaultWorkHoursPerDay, String startWorkDate) {}
+
+    public record StartWorkDateRequest(String startWorkDate) {}
 
     public record CustomBreak(String start, String end) {}
 
-    public record DayOverride(String start, String end, List<CustomBreak> breaks) {}
+    public record DayOverride(String start, String end, List<CustomBreak> breaks, Boolean vacation) {}
 
-    public record OverrideRequest(String date, String start, String end, List<CustomBreak> breaks) {}
+    public record OverrideRequest(String date, String start, String end, List<CustomBreak> breaks, Boolean vacation) {}
+
+    public record VacationRequest(String startDate, String endDate, Boolean excludeWeekends, Boolean vacation) {}
 
     public record EventsResponse(
             List<String> months,
@@ -85,6 +94,7 @@ public class EventController {
         String start = fallbackLunchStart != null ? fallbackLunchStart.trim() : "12:30";
         String end = fallbackLunchEnd != null ? fallbackLunchEnd.trim() : "13:30";
         double hoursPerDay = fallbackWorkHoursPerDay > 0 ? fallbackWorkHoursPerDay : 8.0;
+        String startWorkDate = fallbackStartWorkDate != null ? fallbackStartWorkDate.trim() : "";
 
         Path configPath = resolveConfigFile();
         if (Files.isRegularFile(configPath)) {
@@ -94,6 +104,7 @@ public class EventController {
                 String propStart = props.getProperty("lunch.default.start");
                 String propEnd = props.getProperty("lunch.default.end");
                 String propHours = props.getProperty("work.default.hours.per.day");
+                String propStartWorkDate = props.getProperty("work.start.date");
                 if (propStart != null && !propStart.isBlank()) {
                     start = propStart.trim();
                 }
@@ -109,15 +120,66 @@ public class EventController {
                     } catch (NumberFormatException ignored) {
                     }
                 }
-                log.info("Loaded config from {}: lunchStart={}, lunchEnd={}, hoursPerDay={}", configPath, start, end, hoursPerDay);
+                if (propStartWorkDate != null) {
+                    startWorkDate = propStartWorkDate.trim();
+                }
+                log.info("Loaded config from {}: lunchStart={}, lunchEnd={}, hoursPerDay={}, startWorkDate={}", configPath, start, end, hoursPerDay, startWorkDate);
             } catch (IOException e) {
                 log.warn("Failed to read config.properties from {}: {}", configPath, e.getMessage());
             }
         } else {
-            log.info("Using default config (no external config.properties found at {}): lunchStart={}, lunchEnd={}, hoursPerDay={}", configPath, start, end, hoursPerDay);
+            log.info("Using default config (no external config.properties found at {}): lunchStart={}, lunchEnd={}, hoursPerDay={}, startWorkDate={}", configPath, start, end, hoursPerDay, startWorkDate);
         }
 
-        return new LunchConfig(start, end, hoursPerDay);
+        return new LunchConfig(start, end, hoursPerDay, startWorkDate);
+    }
+
+    private synchronized void saveStartWorkDateToConfig(String startWorkDate) throws IOException {
+        Path configPath = resolveConfigFile();
+        String cleanDate = startWorkDate != null ? startWorkDate.trim() : "";
+
+        if (Files.isRegularFile(configPath)) {
+            List<String> lines = Files.readAllLines(configPath);
+            List<String> updatedLines = new ArrayList<>();
+            boolean found = false;
+            for (String line : lines) {
+                if (line.trim().startsWith("work.start.date")) {
+                    updatedLines.add("work.start.date=" + cleanDate);
+                    found = true;
+                } else {
+                    updatedLines.add(line);
+                }
+            }
+            if (!found) {
+                if (!updatedLines.isEmpty() && !updatedLines.get(updatedLines.size() - 1).isEmpty()) {
+                    updatedLines.add("");
+                }
+                updatedLines.add("# Start work date (YYYY-MM-DD). Leave empty to be prompted on first app startup.");
+                updatedLines.add("work.start.date=" + cleanDate);
+            }
+            Files.write(configPath, updatedLines);
+        } else {
+            LunchConfig current = loadLunchConfig();
+            List<String> lines = List.of(
+                    "# Time Tracker Configuration",
+                    "# Default lunch break start and end times (24-hour HH:mm format)",
+                    "# The overlapping portion with the work interval is deducted from daily worked hours.",
+                    "lunch.default.start=" + current.defaultLunchStart(),
+                    "lunch.default.end=" + current.defaultLunchEnd(),
+                    "",
+                    "# Default expected working hours per day",
+                    "work.default.hours.per.day=" + current.defaultWorkHoursPerDay(),
+                    "",
+                    "# Start work date (YYYY-MM-DD). Leave empty to be prompted on first app startup.",
+                    "work.start.date=" + cleanDate
+            );
+            if (configPath.getParent() != null && !Files.exists(configPath.getParent())) {
+                Files.createDirectories(configPath.getParent());
+            }
+            Files.write(configPath, lines);
+        }
+        this.fallbackStartWorkDate = cleanDate;
+        log.info("Saved work.start.date={} to {}", cleanDate, configPath);
     }
 
     private Path resolveEventsDir() {
@@ -217,6 +279,16 @@ public class EventController {
         return Mono.fromCallable(() -> ResponseEntity.ok(loadLunchConfig()));
     }
 
+    @PostMapping("/config/start-date")
+    public Mono<ResponseEntity<LunchConfig>> saveStartWorkDate(@RequestBody StartWorkDateRequest req) {
+        return Mono.fromCallable(() -> {
+            if (req != null && req.startWorkDate() != null) {
+                saveStartWorkDateToConfig(req.startWorkDate());
+            }
+            return ResponseEntity.ok(loadLunchConfig());
+        });
+    }
+
     @GetMapping("/overrides")
     public Mono<ResponseEntity<Map<String, DayOverride>>> getOverrides() {
         return Mono.fromCallable(() -> ResponseEntity.ok(loadUserOverrides()));
@@ -244,12 +316,82 @@ public class EventController {
                         }
                     }
                 }
-                if (start == null && end == null && breaks.isEmpty()) {
+                Boolean isVacation = Boolean.TRUE.equals(req.vacation()) ? Boolean.TRUE : null;
+                if (start == null && end == null && breaks.isEmpty() && isVacation == null) {
                     monthOverrides.remove(date);
                 } else {
-                    monthOverrides.put(date, new DayOverride(start, end, breaks.isEmpty() ? null : breaks));
+                    monthOverrides.put(date, new DayOverride(start, end, breaks.isEmpty() ? null : breaks, isVacation));
                 }
                 saveUserOverridesForMonth(monthKey, monthOverrides);
+            }
+            return ResponseEntity.ok(loadUserOverrides());
+        });
+    }
+
+    @PostMapping("/overrides/vacation")
+    public Mono<ResponseEntity<Map<String, DayOverride>>> saveVacation(@RequestBody VacationRequest req) {
+        return Mono.fromCallable(() -> {
+            if (req != null && req.startDate() != null && req.startDate().trim().matches("^\\d{4}-\\d{2}-\\d{2}$")) {
+                String startStr = req.startDate().trim();
+                String endStr = (req.endDate() != null && req.endDate().trim().matches("^\\d{4}-\\d{2}-\\d{2}$"))
+                        ? req.endDate().trim()
+                        : startStr;
+
+                LocalDate startDate = LocalDate.parse(startStr);
+                LocalDate endDate = LocalDate.parse(endStr);
+                if (endDate.isBefore(startDate)) {
+                    LocalDate tmp = startDate;
+                    startDate = endDate;
+                    endDate = tmp;
+                }
+
+                boolean excludeWeekends = req.excludeWeekends() == null || req.excludeWeekends();
+                boolean markAsVacation = req.vacation() == null || req.vacation();
+
+                LunchConfig lunchConfig = loadLunchConfig();
+                String startWorkDate = lunchConfig.startWorkDate() != null ? lunchConfig.startWorkDate().trim() : "";
+                boolean hasStartDate = startWorkDate.matches("^\\d{4}-\\d{2}-\\d{2}$");
+
+                Map<String, Map<String, DayOverride>> modifiedMonths = new TreeMap<>();
+
+                for (LocalDate cur = startDate; !cur.isAfter(endDate); cur = cur.plusDays(1)) {
+                    String dateStr = cur.toString();
+                    if (hasStartDate && dateStr.compareTo(startWorkDate) < 0) {
+                        continue;
+                    }
+                    DayOfWeek dow = cur.getDayOfWeek();
+                    boolean isWeekend = (dow == DayOfWeek.SATURDAY || dow == DayOfWeek.SUNDAY);
+                    if (markAsVacation && excludeWeekends && isWeekend) {
+                        continue;
+                    }
+
+                    String monthKey = dateStr.substring(0, 7);
+                    Map<String, DayOverride> monthOverrides = modifiedMonths.computeIfAbsent(
+                            monthKey, this::loadUserOverridesForMonth
+                    );
+
+                    DayOverride existing = monthOverrides.get(dateStr);
+                    String exStart = existing != null ? existing.start() : null;
+                    String exEnd = existing != null ? existing.end() : null;
+                    List<CustomBreak> exBreaks = existing != null ? existing.breaks() : null;
+
+                    if (markAsVacation) {
+                        monthOverrides.put(dateStr, new DayOverride(exStart, exEnd, exBreaks, Boolean.TRUE));
+                    } else {
+                        boolean hasOtherOverrides = (exStart != null && !exStart.isBlank())
+                                || (exEnd != null && !exEnd.isBlank())
+                                || (exBreaks != null && !exBreaks.isEmpty());
+                        if (hasOtherOverrides) {
+                            monthOverrides.put(dateStr, new DayOverride(exStart, exEnd, exBreaks, null));
+                        } else {
+                            monthOverrides.remove(dateStr);
+                        }
+                    }
+                }
+
+                for (Map.Entry<String, Map<String, DayOverride>> entry : modifiedMonths.entrySet()) {
+                    saveUserOverridesForMonth(entry.getKey(), entry.getValue());
+                }
             }
             return ResponseEntity.ok(loadUserOverrides());
         });
@@ -275,6 +417,11 @@ public class EventController {
             Path eventsDir = resolveEventsDir();
             log.info("Reading events from: {}", eventsDir);
 
+            LunchConfig lunchConfig = loadLunchConfig();
+            String startWorkDate = lunchConfig.startWorkDate() != null ? lunchConfig.startWorkDate().trim() : "";
+            boolean hasStartDate = startWorkDate.matches("^\\d{4}-\\d{2}-\\d{2}$");
+            String startMonthKey = hasStartDate ? startWorkDate.substring(0, 7) : "";
+
             Map<String, List<TrackerEvent>> map = new TreeMap<>(Comparator.reverseOrder());
 
             if (Files.isDirectory(eventsDir)) {
@@ -283,11 +430,21 @@ public class EventController {
                         String fileName = entry.getFileName().toString();
                         // Expected: events-yyyy-mm.json -> extract yyyy-mm
                         String monthKey = fileName.replace("events-", "").replace(".json", "");
+                        if (hasStartDate && monthKey.compareTo(startMonthKey) < 0) {
+                            continue;
+                        }
                         try {
                             byte[] bytes = Files.readAllBytes(entry);
                             List<TrackerEvent> events = objectMapper.readValue(bytes, new TypeReference<>() {});
+                            if (hasStartDate) {
+                                events.removeIf(ev -> ev.timestamp() == null
+                                        || ev.timestamp().length() < 10
+                                        || ev.timestamp().substring(0, 10).compareTo(startWorkDate) < 0);
+                            }
                             events.sort(Comparator.comparing(TrackerEvent::timestamp));
-                            map.put(monthKey, events);
+                            if (!events.isEmpty()) {
+                                map.put(monthKey, events);
+                            }
                         } catch (Exception ex) {
                             log.error("Failed to read events from file {}: {}", entry, ex.getMessage());
                         }
@@ -298,8 +455,10 @@ public class EventController {
             }
 
             List<String> months = new ArrayList<>(map.keySet());
-            LunchConfig lunchConfig = loadLunchConfig();
             Map<String, DayOverride> userOverrides = loadUserOverrides();
+            if (hasStartDate) {
+                userOverrides.keySet().removeIf(dateKey -> dateKey.compareTo(startWorkDate) < 0);
+            }
             return ResponseEntity.ok(new EventsResponse(months, map, lunchConfig, userOverrides));
         });
     }
@@ -321,40 +480,75 @@ public class EventController {
             return byMonth;
         }
 
+        LunchConfig lunchConfig = loadLunchConfig();
+        String startWorkDate = lunchConfig.startWorkDate() != null ? lunchConfig.startWorkDate().trim() : "";
+        boolean hasStartDate = startWorkDate.matches("^\\d{4}-\\d{2}-\\d{2}$");
+
         String[] lines = rawContent.split("\\r?\\n");
         for (String line : lines) {
             line = line.trim();
             if (line.isEmpty() || !line.contains("|")) continue;
 
             String[] parts = line.split("\\|");
-            if (parts.length < 3) continue;
+            if (parts.length < 2) continue;
 
             String p0 = parts[0].trim();
             String p1 = parts[1].trim();
-            String p2 = parts[2].trim();
+            String p2 = parts.length >= 3 ? parts[2].trim() : "";
 
-            if (p0.equalsIgnoreCase("OVERRIDE_IN") && p1.matches("^\\d{4}-\\d{2}-\\d{2}$") && !p2.isEmpty()) {
+            if ((p0.equalsIgnoreCase("VACATION") || p0.equalsIgnoreCase("OVERRIDE_VACATION"))
+                    && p1.matches("^\\d{4}-\\d{2}-\\d{2}$")) {
+                LocalDate startDate = LocalDate.parse(p1);
+                LocalDate endDate = p2.matches("^\\d{4}-\\d{2}-\\d{2}$") ? LocalDate.parse(p2) : startDate;
+                if (endDate.isBefore(startDate)) {
+                    LocalDate tmp = startDate;
+                    startDate = endDate;
+                    endDate = tmp;
+                }
+                for (LocalDate cur = startDate; !cur.isAfter(endDate); cur = cur.plusDays(1)) {
+                    DayOfWeek dow = cur.getDayOfWeek();
+                    if (!startDate.equals(endDate) && (dow == DayOfWeek.SATURDAY || dow == DayOfWeek.SUNDAY)) {
+                        continue;
+                    }
+                    String date = cur.toString();
+                    if (hasStartDate && date.compareTo(startWorkDate) < 0) continue;
+                    String monthKey = date.substring(0, 7);
+                    Map<String, DayOverride> monthMap = byMonth.computeIfAbsent(monthKey, k -> new TreeMap<>());
+                    DayOverride existing = monthMap.get(date);
+                    monthMap.put(date, new DayOverride(
+                            existing != null ? existing.start() : null,
+                            existing != null ? existing.end() : null,
+                            existing != null ? existing.breaks() : null,
+                            Boolean.TRUE
+                    ));
+                }
+            } else if (parts.length >= 3 && p0.equalsIgnoreCase("OVERRIDE_IN") && p1.matches("^\\d{4}-\\d{2}-\\d{2}$") && !p2.isEmpty()) {
                 String date = p1;
+                if (hasStartDate && date.compareTo(startWorkDate) < 0) continue;
                 String monthKey = date.substring(0, 7);
                 Map<String, DayOverride> monthMap = byMonth.computeIfAbsent(monthKey, k -> new TreeMap<>());
                 DayOverride existing = monthMap.get(date);
                 monthMap.put(date, new DayOverride(
                         p2,
                         existing != null ? existing.end() : null,
-                        existing != null ? existing.breaks() : null
+                        existing != null ? existing.breaks() : null,
+                        existing != null ? existing.vacation() : null
                 ));
-            } else if (p0.equalsIgnoreCase("OVERRIDE_OUT") && p1.matches("^\\d{4}-\\d{2}-\\d{2}$") && !p2.isEmpty()) {
+            } else if (parts.length >= 3 && p0.equalsIgnoreCase("OVERRIDE_OUT") && p1.matches("^\\d{4}-\\d{2}-\\d{2}$") && !p2.isEmpty()) {
                 String date = p1;
+                if (hasStartDate && date.compareTo(startWorkDate) < 0) continue;
                 String monthKey = date.substring(0, 7);
                 Map<String, DayOverride> monthMap = byMonth.computeIfAbsent(monthKey, k -> new TreeMap<>());
                 DayOverride existing = monthMap.get(date);
                 monthMap.put(date, new DayOverride(
                         existing != null ? existing.start() : null,
                         p2,
-                        existing != null ? existing.breaks() : null
+                        existing != null ? existing.breaks() : null,
+                        existing != null ? existing.vacation() : null
                 ));
-            } else if (p0.matches("^\\d{4}-\\d{2}-\\d{2}$") && !p1.isEmpty() && !p2.isEmpty()) {
+            } else if (parts.length >= 3 && p0.matches("^\\d{4}-\\d{2}-\\d{2}$") && !p1.isEmpty() && !p2.isEmpty()) {
                 String date = p0;
+                if (hasStartDate && date.compareTo(startWorkDate) < 0) continue;
                 String monthKey = date.substring(0, 7);
                 Map<String, DayOverride> monthMap = byMonth.computeIfAbsent(monthKey, k -> new TreeMap<>());
                 DayOverride existing = monthMap.get(date);
@@ -369,7 +563,8 @@ public class EventController {
                 monthMap.put(date, new DayOverride(
                         existing != null ? existing.start() : null,
                         existing != null ? existing.end() : null,
-                        breaks
+                        breaks,
+                        existing != null ? existing.vacation() : null
                 ));
             }
         }
@@ -419,6 +614,10 @@ public class EventController {
                 }
             }
 
+            LunchConfig lunchConfig = loadLunchConfig();
+            String startWorkDate = lunchConfig.startWorkDate() != null ? lunchConfig.startWorkDate().trim() : "";
+            boolean hasStartDate = startWorkDate.matches("^\\d{4}-\\d{2}-\\d{2}$");
+
             // Parse lines in format: STARTUP|YYYY-MM-DD HH:mm:ss or SHUTDOWN|YYYY-MM-DD HH:mm:ss
             Map<String, List<TrackerEvent>> parsedByMonth = new HashMap<>();
             String[] lines = rawContent.split("\\r?\\n");
@@ -432,6 +631,10 @@ public class EventController {
                     String timestamp = parts[1].trim();
                     if ((name.equalsIgnoreCase("STARTUP") || name.equalsIgnoreCase("SHUTDOWN"))
                             && timestamp.matches("^\\d{4}-\\d{2}-\\d{2}.*")) {
+                        String dateStr = timestamp.substring(0, 10);
+                        if (hasStartDate && dateStr.compareTo(startWorkDate) < 0) {
+                            continue;
+                        }
                         String monthKey = timestamp.substring(0, 7);
                         parsedByMonth.computeIfAbsent(monthKey, k -> new ArrayList<>())
                                 .add(new TrackerEvent(name, timestamp));

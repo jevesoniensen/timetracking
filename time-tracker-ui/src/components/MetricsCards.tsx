@@ -1,14 +1,20 @@
 import React from 'react';
-import type { MonthSummary, LunchConfig } from '../types';
+import type { MonthSummary, LunchConfig, OverallSaldoSummary } from '../types';
 
 interface MetricsCardsProps {
   summary: MonthSummary;
   lunchConfig?: LunchConfig;
+  overallSaldo?: OverallSaldoSummary;
 }
 
-export const MetricsCards: React.FC<MetricsCardsProps> = ({ summary, lunchConfig }) => {
+export const MetricsCards: React.FC<MetricsCardsProps> = ({
+  summary,
+  lunchConfig,
+  overallSaldo,
+}) => {
   const hoursPerDay = lunchConfig?.defaultWorkHoursPerDay || 8;
   const isPositiveBalance = summary.workBalanceSeconds >= 0;
+  const isOverallPositive = (overallSaldo?.workBalanceSeconds ?? 0) >= 0;
 
   return (
     <div className="metrics-grid">
@@ -20,25 +26,47 @@ export const MetricsCards: React.FC<MetricsCardsProps> = ({ summary, lunchConfig
           </svg>
         </div>
         <div className="metric-content">
-          <span className="metric-label">Total Work Hours</span>
+          <span className="metric-label">Month Worked &amp; Saldo</span>
           <div className="metric-value">
             {summary.totalWorkFormatted}{' '}
             <span
               className="metric-unit"
               style={{
                 color: isPositiveBalance ? '#34d399' : '#f87171',
-                fontWeight: 600,
+                fontWeight: 700,
               }}
-              title="Difference vs. Month Work Expectation (excluding today)"
+              title="Month Saldo vs. Month Work Expectation (excluding today)"
             >
               ({summary.workBalanceFormatted})
             </span>
           </div>
           <span className="metric-hint">
-            Across {summary.activeDaysCount} active days (excl. today)
+            Across {summary.activeDaysCount} active days in {summary.monthLabel} (excl. today)
           </span>
         </div>
       </div>
+
+      {overallSaldo && (
+        <div className="metric-card">
+          <div className={`metric-icon-box ${isOverallPositive ? 'emerald' : 'amber'}`}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+            </svg>
+          </div>
+          <div className="metric-content">
+            <span className="metric-label">General Saldo (All Months)</span>
+            <div
+              className="metric-value"
+              style={{ color: isOverallPositive ? '#34d399' : '#f87171' }}
+            >
+              {overallSaldo.workBalanceFormatted}
+            </div>
+            <span className="metric-hint">
+              {overallSaldo.totalWorkFormatted} worked / {overallSaldo.expectedWorkFormatted} expected ({overallSaldo.monthsCount} {overallSaldo.monthsCount === 1 ? 'month' : 'months'})
+            </span>
+          </div>
+        </div>
+      )}
 
       <div className="metric-card">
         <div className="metric-icon-box amber">
@@ -52,7 +80,8 @@ export const MetricsCards: React.FC<MetricsCardsProps> = ({ summary, lunchConfig
           <span className="metric-label">Month Work Expectation</span>
           <div className="metric-value">{summary.expectedWorkFormatted}</div>
           <span className="metric-hint">
-            {summary.expectedWorkDaysCount} workdays × {hoursPerDay}h/day (excl. today)
+            {summary.expectedWorkDaysCount} workdays × {hoursPerDay}h/day
+            {summary.vacationDaysCount > 0 ? ` (${summary.vacationDaysCount} vacation)` : ''} (excl. today)
           </span>
         </div>
       </div>
@@ -72,7 +101,11 @@ export const MetricsCards: React.FC<MetricsCardsProps> = ({ summary, lunchConfig
             {summary.activeDaysCount} / {summary.expectedWorkDaysCount}{' '}
             <span className="metric-unit">days</span>
           </div>
-          <span className="metric-hint">Logged vs. expected in {summary.monthLabel}</span>
+          <span className="metric-hint">
+            {summary.vacationDaysCount > 0
+              ? `${summary.vacationDaysCount} vacation ${summary.vacationDaysCount === 1 ? 'day' : 'days'} in ${summary.monthLabel}`
+              : `Logged vs. expected in ${summary.monthLabel}`}
+          </span>
         </div>
       </div>
 

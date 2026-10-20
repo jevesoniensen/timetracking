@@ -4,7 +4,12 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 #[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+#[cfg(target_os = "windows")]
 use std::process::Command;
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 pub mod config;
 pub use config::Config;
@@ -66,8 +71,24 @@ pub fn sync_windows_events_with_config(config: impl Into<Config>) -> io::Result<
         SyncState { last_timestamp: None }
     };
 
+    let start_work_date = config.effective_start_work_date();
+
     // Build the PowerShell command
-    let start_time_filter = match &state.last_timestamp {
+    let effective_start_time: Option<String> = match (&state.last_timestamp, &start_work_date) {
+        (Some(last_ts), Some(start_date)) => {
+            let start_ts = format!("{} 00:00:00", start_date);
+            if start_ts > *last_ts {
+                Some(start_ts)
+            } else {
+                Some(last_ts.clone())
+            }
+        }
+        (Some(last_ts), None) => Some(last_ts.clone()),
+        (None, Some(start_date)) => Some(format!("{} 00:00:00", start_date)),
+        (None, None) => None,
+    };
+
+    let start_time_filter = match &effective_start_time {
         Some(ts) => format!("; StartTime=[datetime]'{}'", ts),
         None => String::new(),
     };
@@ -90,6 +111,7 @@ pub fn sync_windows_events_with_config(config: impl Into<Config>) -> io::Result<
     
     let output = Command::new("powershell")
         .args(&["-NoProfile", "-Command", &ps_script])
+        .creation_flags(CREATE_NO_WINDOW)
         .output()?;
 
     if !output.status.success() {
@@ -125,6 +147,13 @@ pub fn sync_windows_events_with_config(config: impl Into<Config>) -> io::Result<
             6006 => "SHUTDOWN".to_string(),
             _ => format!("UNKNOWN_{}", ev.Id),
         };
+
+        // Ignore any events before the configured start work date
+        if let Some(ref start_date) = start_work_date {
+            if ev.TimeCreated.len() >= 10 && &ev.TimeCreated[..10] < start_date.as_str() {
+                continue;
+            }
+        }
 
         // Avoid duplicating the event if we filtered by the exact same StartTime
         if let Some(last_ts) = &state.last_timestamp {

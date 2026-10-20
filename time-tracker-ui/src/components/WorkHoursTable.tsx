@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type { DaySummary, DayStatus, LunchConfig, CustomBreak } from '../types';
+import { normalize24hTime } from '../utils/eventProcessor';
 
 interface WorkHoursTableProps {
   days: DaySummary[];
@@ -9,18 +10,21 @@ interface WorkHoursTableProps {
     date: string,
     start: string | null,
     end: string | null,
-    breaks?: CustomBreak[] | null
+    breaks?: CustomBreak[] | null,
+    vacation?: boolean | null
   ) => void;
+  onOpenVacation?: () => void;
+  onOpenCustomWorkDay?: () => void;
 }
 
-const TIME_24H_REGEX = /^([01]\d|2[0-3]):([0-5]\d)(:([0-5]\d))?$/;
+const TIME_24H_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 function time24ToSeconds(t: string): number {
   const parts = t.split(':').map(Number);
   return (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
 }
 
-type SortField = 'date' | 'day' | 'start' | 'end' | 'duration';
+type SortField = 'date' | 'day' | 'start' | 'end' | 'duration' | 'saldo';
 type SortDirection = 'asc' | 'desc';
 
 export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
@@ -28,7 +32,14 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
   monthLabel,
   lunchConfig,
   onSaveOverride,
+  onOpenVacation,
+  onOpenCustomWorkDay,
 }) => {
+  const nowDate = new Date();
+  const todayStr = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(
+    2,
+    '0'
+  )}-${String(nowDate.getDate()).padStart(2, '0')}`;
   const [filterQuery, setFilterQuery] = useState('');
   const [sortField, setSortField] = useState<SortField>('date');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
@@ -79,10 +90,10 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
     const currentVal =
       field === 'start'
         ? day.startWorkTime !== '—'
-          ? day.startWorkTime
+          ? normalize24hTime(day.startWorkTime)
           : '08:30'
         : day.endWorkTime !== '—' && day.endWorkTime !== 'In Progress'
-        ? day.endWorkTime
+        ? normalize24hTime(day.endWorkTime)
         : '17:30';
     setEditingCell({ date: day.date, field });
     setEditValue(currentVal);
@@ -104,17 +115,17 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
 
     const trimmed = editValue.trim();
     if (trimmed !== '' && !TIME_24H_REGEX.test(trimmed)) {
-      setEditError('Use 24h format HH:mm or HH:mm:ss (e.g. 08:30 or 17:45:00)');
+      setEditError('Use 24h format HH:mm (e.g. 08:30 or 17:45)');
       return;
     }
 
-    const currentStartOverride = day.isStartOverridden ? day.startWorkTime : null;
-    const currentEndOverride = day.isEndOverridden ? day.endWorkTime : null;
+    const currentStartOverride = day.isStartOverridden ? normalize24hTime(day.startWorkTime) : null;
+    const currentEndOverride = day.isEndOverridden ? normalize24hTime(day.endWorkTime) : null;
 
-    const newStart = field === 'start' ? (trimmed || null) : currentStartOverride;
-    const newEnd = field === 'end' ? (trimmed || null) : currentEndOverride;
+    const newStart = field === 'start' ? (trimmed ? normalize24hTime(trimmed) : null) : currentStartOverride;
+    const newEnd = field === 'end' ? (trimmed ? normalize24hTime(trimmed) : null) : currentEndOverride;
 
-    onSaveOverride(day.date, newStart, newEnd, day.customBreaks);
+    onSaveOverride(day.date, newStart, newEnd, day.customBreaks, day.isVacation);
     setEditingCell(null);
     setEditValue('');
     setEditError(null);
@@ -131,15 +142,51 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
     const currentEndOverride = day.isEndOverridden ? day.endWorkTime : null;
 
     if (field === 'all') {
-      onSaveOverride(day.date, null, null, null);
+      onSaveOverride(day.date, null, null, null, null);
     } else if (field === 'both') {
-      onSaveOverride(day.date, null, null, day.customBreaks);
+      onSaveOverride(day.date, null, null, day.customBreaks, day.isVacation);
     } else if (field === 'start') {
-      onSaveOverride(day.date, null, currentEndOverride, day.customBreaks);
+      onSaveOverride(day.date, null, currentEndOverride, day.customBreaks, day.isVacation);
     } else {
-      onSaveOverride(day.date, currentStartOverride, null, day.customBreaks);
+      onSaveOverride(day.date, currentStartOverride, null, day.customBreaks, day.isVacation);
     }
     setEditingCell(null);
+  };
+
+  const toggleDayVacation = (e: React.MouseEvent, day: DaySummary) => {
+    e.stopPropagation();
+    if (!onSaveOverride) return;
+    const currentStartOverride = day.isStartOverridden ? day.startWorkTime : null;
+    const currentEndOverride = day.isEndOverridden ? day.endWorkTime : null;
+    onSaveOverride(
+      day.date,
+      currentStartOverride,
+      currentEndOverride,
+      day.customBreaks,
+      !day.isVacation
+    );
+  };
+
+  const startWorkDayNow = (e: React.MouseEvent, day: DaySummary) => {
+    e.stopPropagation();
+    if (!onSaveOverride) return;
+    const now = new Date();
+    const nowHHmm = `${String(now.getHours()).padStart(2, '0')}:${String(
+      now.getMinutes()
+    ).padStart(2, '0')}`;
+    const currentEndOverride = day.isEndOverridden ? day.endWorkTime : null;
+    onSaveOverride(day.date, nowHHmm, currentEndOverride, day.customBreaks, day.isVacation);
+  };
+
+  const endWorkDayNow = (e: React.MouseEvent, day: DaySummary) => {
+    e.stopPropagation();
+    if (!onSaveOverride) return;
+    const now = new Date();
+    const nowHHmm = `${String(now.getHours()).padStart(2, '0')}:${String(
+      now.getMinutes()
+    ).padStart(2, '0')}`;
+    const currentStartOverride = day.isStartOverridden ? day.startWorkTime : null;
+    onSaveOverride(day.date, currentStartOverride, nowHHmm, day.customBreaks, day.isVacation);
   };
 
   const openAddBreak = (e: React.MouseEvent, date: string) => {
@@ -178,7 +225,7 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
     const currentEndOverride = day.isEndOverridden ? day.endWorkTime : null;
     const nextBreaks: CustomBreak[] = [...(day.customBreaks || []), { start: s, end: e }];
 
-    onSaveOverride(day.date, currentStartOverride, currentEndOverride, nextBreaks);
+    onSaveOverride(day.date, currentStartOverride, currentEndOverride, nextBreaks, day.isVacation);
     setAddingBreakDate(null);
     setBreakError(null);
   };
@@ -189,8 +236,10 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
     const currentStartOverride = day.isStartOverridden ? day.startWorkTime : null;
     const currentEndOverride = day.isEndOverridden ? day.endWorkTime : null;
     const nextBreaks = day.customBreaks.filter((_, idx) => idx !== index);
-    onSaveOverride(day.date, currentStartOverride, currentEndOverride, nextBreaks);
+    onSaveOverride(day.date, currentStartOverride, currentEndOverride, nextBreaks, day.isVacation);
   };
+
+  const vacationDaysInMonth = days.filter((d) => d.isVacation).length;
 
   const filteredDays = days
     .filter((d) => {
@@ -200,7 +249,8 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
         d.date.includes(q) ||
         d.dayOfWeekFull.toLowerCase().includes(q) ||
         d.formattedDate.toLowerCase().includes(q) ||
-        d.status.toLowerCase().includes(q)
+        d.status.toLowerCase().includes(q) ||
+        (d.isVacation && 'vacation'.includes(q))
       );
     })
     .slice()
@@ -233,6 +283,10 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
           const diff = a.durationSeconds - b.durationSeconds;
           return diff !== 0 ? diff * dir : b.date.localeCompare(a.date);
         }
+        case 'saldo': {
+          const diff = a.workBalanceSeconds - b.workBalanceSeconds;
+          return diff !== 0 ? diff * dir : b.date.localeCompare(a.date);
+        }
       }
     });
 
@@ -262,6 +316,12 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
             <span className="badge-dot"></span> Off
           </span>
         );
+      case 'vacation':
+        return (
+          <span className="badge badge-vacation">
+            <span className="badge-dot"></span> Vacation
+          </span>
+        );
     }
   };
 
@@ -281,11 +341,44 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
               <span className="table-count-chip" title="Configured daily work expectation">
                 Target: {lunchConfig.defaultWorkHoursPerDay || 8}h/day
               </span>
+              {lunchConfig.startWorkDate && (
+                <span className="table-count-chip" title="Configured start work date in config.properties">
+                  Start Date: {lunchConfig.startWorkDate}
+                </span>
+              )}
+              {vacationDaysInMonth > 0 && (
+                <span
+                  className="table-count-chip vacation-count-chip"
+                  title="Vacation days marked in overrides for this month"
+                >
+                  Vacation: {vacationDaysInMonth} {vacationDaysInMonth === 1 ? 'day' : 'days'}
+                </span>
+              )}
             </>
           )}
         </div>
 
-        <div className="table-actions">
+        <div className="table-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.7rem' }}>
+          {onOpenCustomWorkDay && (
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={onOpenCustomWorkDay}
+              title="Add a custom work day from scratch"
+            >
+              + Add Work Day
+            </button>
+          )}
+          {onOpenVacation && (
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={onOpenVacation}
+              title="Add or manage vacation by single day or period"
+            >
+              + Vacation
+            </button>
+          )}
           <div className="search-box">
             <svg
               className="search-icon"
@@ -324,7 +417,7 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
               <th
                 scope="col"
                 className="sortable-th"
-                style={{ width: '16%' }}
+                style={{ width: '15%' }}
                 onClick={() => toggleSort('date')}
                 title="Sort by date"
               >
@@ -335,7 +428,7 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
               <th
                 scope="col"
                 className="sortable-th"
-                style={{ width: '10%' }}
+                style={{ width: '9%' }}
                 onClick={() => toggleSort('day')}
                 title="Sort by weekday"
               >
@@ -346,7 +439,7 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
               <th
                 scope="col"
                 className="sortable-th"
-                style={{ width: '19%' }}
+                style={{ width: '17%' }}
                 onClick={() => toggleSort('start')}
                 title="Sort by start time"
               >
@@ -355,7 +448,7 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
                   Start {renderSortIcon('start')}
                 </div>
               </th>
-              <th scope="col" style={{ width: '18%' }}>
+              <th scope="col" style={{ width: '17%' }}>
                 <div className="th-content">
                   <span className="th-indicator lunch"></span>
                   Lunch Break
@@ -364,7 +457,7 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
               <th
                 scope="col"
                 className="sortable-th"
-                style={{ width: '19%' }}
+                style={{ width: '17%' }}
                 onClick={() => toggleSort('end')}
                 title="Sort by end time"
               >
@@ -376,7 +469,7 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
               <th
                 scope="col"
                 className="sortable-th"
-                style={{ width: '13%' }}
+                style={{ width: '11%' }}
                 onClick={() => toggleSort('duration')}
                 title="Sort by worked duration"
               >
@@ -384,13 +477,24 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
                   Duration {renderSortIcon('duration')}
                 </div>
               </th>
-              <th scope="col" style={{ width: '5%', textAlign: 'right' }}></th>
+              <th
+                scope="col"
+                className="sortable-th"
+                style={{ width: '10%' }}
+                onClick={() => toggleSort('saldo')}
+                title="Sort by daily saldo (worked vs. expected)"
+              >
+                <div className="th-content">
+                  Saldo {renderSortIcon('saldo')}
+                </div>
+              </th>
+              <th scope="col" style={{ width: '4%', textAlign: 'right' }}></th>
             </tr>
           </thead>
           <tbody>
             {filteredDays.length === 0 ? (
               <tr>
-                <td colSpan={7} className="empty-state-cell">
+                <td colSpan={8} className="empty-state-cell">
                   <div className="empty-state">
                     <svg
                       className="empty-icon"
@@ -431,7 +535,9 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
                 return (
                   <React.Fragment key={day.date}>
                     <tr
-                      className={`table-row ${day.isWeekend ? 'weekend-row' : ''} ${isExpanded ? 'row-expanded' : ''}`}
+                      className={`table-row ${day.isWeekend ? 'weekend-row' : ''} ${
+                        day.isVacation ? 'vacation-row' : ''
+                      } ${isExpanded ? 'row-expanded' : ''}`}
                       onClick={() => toggleExpand(day.date)}
                     >
                       <td className="cell-date">
@@ -440,10 +546,39 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
                           <span className="date-raw">{day.date}</span>
                         </div>
                       </td>
-                      <td className="cell-day">
-                        <span className={`weekday-pill ${day.isWeekend ? 'weekend' : 'workday'}`}>
-                          {day.dayOfWeek}
-                        </span>
+                      <td className="cell-day" onClick={(e) => e.stopPropagation()}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                          <span className={`weekday-pill ${day.isWeekend ? 'weekend' : 'workday'}`}>
+                            {day.dayOfWeek}
+                          </span>
+                          {day.isVacation ? (
+                            <span
+                              className="vacation-pill"
+                              title="Marked as Vacation in overrides — click ✕ to remove"
+                            >
+                              <span>Vacation</span>
+                              <button
+                                type="button"
+                                className="remove-break-btn"
+                                onClick={(e) => toggleDayVacation(e, day)}
+                                title="Unmark vacation"
+                              >
+                                ✕
+                              </button>
+                            </span>
+                          ) : (
+                            !day.isWeekend && (
+                              <button
+                                type="button"
+                                className="mark-vacation-row-btn"
+                                onClick={(e) => toggleDayVacation(e, day)}
+                                title="Mark this day as Vacation in overrides"
+                              >
+                                + Vacation
+                              </button>
+                            )
+                          )}
+                        </div>
                       </td>
                       <td className="cell-time" onClick={(e) => e.stopPropagation()}>
                         {isEditingStart ? (
@@ -516,6 +651,19 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
                                 title="Set manual start time (24h)"
                               >
                                 — <span className="edit-hint">Edit</span>
+                              </button>
+                            )}
+                            {day.date === todayStr && !day.isStartOverridden && (
+                              <button
+                                type="button"
+                                className="quick-clock-btn start-now-btn"
+                                onClick={(e) => startWorkDayNow(e, day)}
+                                title="Start workday now (override start with current time)"
+                                aria-label="Start workday now"
+                              >
+                                <svg viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                                  <polygon points="6 4 20 12 6 20 6 4" />
+                                </svg>
                               </button>
                             )}
                           </div>
@@ -722,6 +870,19 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
                                 — <span className="edit-hint">Edit</span>
                               </button>
                             )}
+                            {day.date === todayStr && !day.isEndOverridden && (
+                              <button
+                                type="button"
+                                className="quick-clock-btn end-now-btn"
+                                onClick={(e) => endWorkDayNow(e, day)}
+                                title="End workday now (override end with current time)"
+                                aria-label="End workday now"
+                              >
+                                <svg viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                                  <rect x="6" y="6" width="12" height="12" rx="2" />
+                                </svg>
+                              </button>
+                            )}
                           </div>
                         )}
                       </td>
@@ -747,7 +908,7 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
                             )}
                           </div>
                           {day.durationSeconds > 0 && (
-                            <div className="progress-bar-bg" title={`${percentage}% of 8h standard workday`}>
+                            <div className="progress-bar-bg" title={`${percentage}% of ${targetHours}h standard workday`}>
                               <div
                                 className="progress-bar-fill"
                                 style={{ width: `${percentage}%` }}
@@ -755,6 +916,41 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
                             </div>
                           )}
                         </div>
+                      </td>
+                      <td className="cell-duration">
+                        <span
+                          className="timestamp-mono"
+                          style={{
+                            fontWeight: 700,
+                            fontSize: '0.88rem',
+                            padding: '0.2rem 0.55rem',
+                            borderRadius: '6px',
+                            color:
+                              day.workBalanceSeconds > 0
+                                ? '#34d399'
+                                : day.workBalanceSeconds < 0
+                                ? '#f87171'
+                                : '#94a3b8',
+                            background:
+                              day.workBalanceSeconds > 0
+                                ? 'rgba(16, 185, 129, 0.12)'
+                                : day.workBalanceSeconds < 0
+                                ? 'rgba(239, 68, 68, 0.12)'
+                                : 'rgba(148, 163, 184, 0.1)',
+                            border: `1px solid ${
+                              day.workBalanceSeconds > 0
+                                ? 'rgba(16, 185, 129, 0.3)'
+                                : day.workBalanceSeconds < 0
+                                ? 'rgba(239, 68, 68, 0.3)'
+                                : 'rgba(148, 163, 184, 0.2)'
+                            }`,
+                          }}
+                          title={`Daily Saldo: ${day.workBalanceFormatted} (${day.durationFormatted} worked vs. ${
+                            day.isWeekend || day.isVacation ? '0h' : `${targetHours}h`
+                          } expected)`}
+                        >
+                          {day.workBalanceFormatted}
+                        </span>
                       </td>
                       <td className="cell-expand" style={{ textAlign: 'right' }}>
                         <button
@@ -773,12 +969,43 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
 
                     {isExpanded && (
                       <tr className="expansion-row">
-                        <td colSpan={7}>
+                        <td colSpan={8}>
                           <div className="day-breakdown-panel">
                             <div className="breakdown-details-bar">
                               <div className="breakdown-detail-item">
                                 <span className="breakdown-detail-label">Status</span>
                                 {getStatusBadge(day.status)}
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary btn-sm"
+                                  style={{ padding: '0.2rem 0.55rem', fontSize: '0.72rem' }}
+                                  onClick={(e) => toggleDayVacation(e, day)}
+                                >
+                                  {day.isVacation ? 'Unmark Vacation' : 'Mark as Vacation'}
+                                </button>
+                              </div>
+                              <div className="breakdown-detail-item">
+                                <span className="breakdown-detail-label">Daily Saldo</span>
+                                <span
+                                  className="breakdown-detail-value"
+                                  style={{
+                                    color:
+                                      day.workBalanceSeconds > 0
+                                        ? '#34d399'
+                                        : day.workBalanceSeconds < 0
+                                        ? '#f87171'
+                                        : '#94a3b8',
+                                    fontWeight: 700,
+                                  }}
+                                >
+                                  {day.workBalanceFormatted} (vs.{' '}
+                                  {day.isWeekend
+                                    ? '0h weekend'
+                                    : day.isVacation
+                                    ? '0h vacation'
+                                    : `${targetHours}h`}{' '}
+                                  expected)
+                                </span>
                               </div>
                               <div className="breakdown-detail-item">
                                 <span className="breakdown-detail-label">Sessions</span>
@@ -805,15 +1032,23 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
                                   </span>
                                 </div>
                               )}
-                              {(day.isStartOverridden || day.isEndOverridden || day.customBreaks.length > 0) && (
+                              {(day.isStartOverridden ||
+                                day.isEndOverridden ||
+                                day.customBreaks.length > 0 ||
+                                day.isVacation) && (
                                 <div className="breakdown-detail-item">
                                   <span className="breakdown-detail-label">User Overrides</span>
                                   <span className="breakdown-detail-value">
-                                    {day.isStartOverridden ? `Start: ${day.startWorkTime}` : ''}
-                                    {day.isStartOverridden && day.isEndOverridden ? ' · ' : ''}
-                                    {day.isEndOverridden ? `End: ${day.endWorkTime}` : ''}
-                                    {(day.isStartOverridden || day.isEndOverridden) && day.customBreaks.length > 0 ? ' · ' : ''}
-                                    {day.customBreaks.length > 0 ? `${day.customBreaks.length} custom break(s)` : ''}
+                                    {[
+                                      day.isVacation ? 'Vacation' : '',
+                                      day.isStartOverridden ? `Start: ${day.startWorkTime}` : '',
+                                      day.isEndOverridden ? `End: ${day.endWorkTime}` : '',
+                                      day.customBreaks.length > 0
+                                        ? `${day.customBreaks.length} custom break(s)`
+                                        : '',
+                                    ]
+                                      .filter(Boolean)
+                                      .join(' · ')}
                                   </span>
                                   <button
                                     className="btn btn-secondary btn-sm"
