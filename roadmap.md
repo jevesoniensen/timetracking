@@ -12,6 +12,10 @@ a icon should be shown in the current day line allowing the user to start the da
 
 in the current day an icon should be shown do allow the user to end manually the day, this info should be writen in the overwrides, after that the icon should disapperar
 
+## Set non working day
+
+## add holidays
+
 ## Automated GitHub Releases
 
 Want it on the GitHub Releases page instead?
