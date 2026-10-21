@@ -1,5 +1,7 @@
 # Roadmap
 
+## Fix: Read current day windows events, but keep ignoring today in the worked hours calculation
+
 ## Custom Work Day
 
 Allow user add a day of work from scratch
