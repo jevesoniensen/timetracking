@@ -16,6 +16,26 @@ export const DEFAULT_LUNCH_CONFIG: LunchConfig = {
   startWorkDate: '',
 };
 
+export function isStartEvent(ev: TrackerEvent): boolean {
+  if (ev.type) {
+    return ev.type.toUpperCase() === 'START';
+  }
+  const n = ev.name.toUpperCase();
+  return n === 'STARTUP' || n === 'LOGON' || n === 'RESUME' || n === 'WAKE';
+}
+
+export function isEndEvent(ev: TrackerEvent): boolean {
+  if (ev.type) {
+    return ev.type.toUpperCase() === 'END';
+  }
+  const n = ev.name.toUpperCase();
+  return (
+    n.includes('SHUTDOWN') ||
+    n === 'LOGOFF' ||
+    n === 'SLEEP'
+  );
+}
+
 export function formatTime(timestamp: string): string {
   const parts = timestamp.split(' ');
   return parts.length > 1 ? parts[1] : timestamp;
@@ -177,18 +197,25 @@ export function parsePipeDelimitedEvents(rawText: string): Record<string, Tracke
     if (!trimmed || !trimmed.includes('|')) continue;
 
     const parts = trimmed.split('|');
-    if (parts.length === 2) {
+    if (parts.length >= 2) {
       const name = parts[0].trim();
       const timestamp = parts[1].trim();
-      if (
-        (name.toUpperCase() === 'STARTUP' || name.toUpperCase() === 'SHUTDOWN') &&
-        /^\d{4}-\d{2}-\d{2}/.test(timestamp)
-      ) {
+      const rawType = parts.length >= 3 ? parts[2].trim().toUpperCase() : undefined;
+      const inferredType =
+        rawType === 'START' || rawType === 'END'
+          ? rawType
+          : isStartEvent({ name, timestamp })
+          ? 'START'
+          : isEndEvent({ name, timestamp })
+          ? 'END'
+          : undefined;
+
+      if (inferredType && /^\d{4}-\d{2}-\d{2}/.test(timestamp)) {
         const monthKey = timestamp.slice(0, 7);
         if (!result[monthKey]) {
           result[monthKey] = [];
         }
-        result[monthKey].push({ name, timestamp });
+        result[monthKey].push({ name, timestamp, type: inferredType });
       }
     }
   }
@@ -434,14 +461,11 @@ export function processEventsByMonth(
         a.timestamp.localeCompare(b.timestamp)
       );
 
-      // Find first STARTUP of the day
-      const firstStartup =
-        dayEvents.find((e) => e.name.toUpperCase() === 'STARTUP') || null;
+      // Find first start event of the day
+      const firstStartup = dayEvents.find(isStartEvent) || null;
 
-      // Find last SHUTDOWN of the day
-      const shutdowns = dayEvents.filter(
-        (e) => e.name.toUpperCase() === 'SHUTDOWN'
-      );
+      // Find last end event of the day
+      const shutdowns = dayEvents.filter(isEndEvent);
       const lastShutdown =
         shutdowns.length > 0 ? shutdowns[shutdowns.length - 1] : null;
 
@@ -574,15 +598,15 @@ export function processEventsByMonth(
         : '—';
 
       const startWorkTime = overrideStart
-        ? overrideStart
+        ? overrideStart.slice(0, 5)
         : firstStartup
-        ? formatTime(firstStartup.timestamp)
+        ? formatTime(firstStartup.timestamp).slice(0, 5)
         : '—';
 
       const endWorkTime = overrideEnd
-        ? overrideEnd
+        ? overrideEnd.slice(0, 5)
         : lastShutdown
-        ? formatTime(lastShutdown.timestamp)
+        ? formatTime(lastShutdown.timestamp).slice(0, 5)
         : status === 'in_progress'
         ? 'In Progress'
         : '—';
@@ -600,6 +624,8 @@ export function processEventsByMonth(
         isVacation,
         firstStartup,
         lastShutdown,
+        effectiveStartTimestamp,
+        effectiveEndTimestamp,
         startWorkTime,
         endWorkTime,
         isStartOverridden,
@@ -618,7 +644,7 @@ export function processEventsByMonth(
         workBalanceFormatted: formatSignedBalance(dayBalanceSeconds),
         status,
         allEvents: dayEvents,
-        sessionCount: dayEvents.filter((e) => e.name.toUpperCase() === 'STARTUP').length,
+        sessionCount: dayEvents.filter(isStartEvent).length,
       });
     }
 

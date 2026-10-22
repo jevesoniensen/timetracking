@@ -18,9 +18,110 @@ use tao::event_loop::{ControlFlow, EventLoopBuilder};
 use tao::window::WindowBuilder;
 use wry::WebViewBuilder;
 
-const SERVER_PORT: u16 = 8080;
-const SERVER_URL: &str = "http://localhost:8080";
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(120);
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+struct WinSystemTime {
+    w_year: u16,
+    w_month: u16,
+    w_day_of_week: u16,
+    w_day: u16,
+    w_hour: u16,
+    w_minute: u16,
+    w_second: u16,
+    w_milliseconds: u16,
+}
+
+#[cfg(target_os = "windows")]
+extern "system" {
+    fn GetLocalTime(lp_system_time: *mut WinSystemTime);
+}
+
+fn current_timestamp() -> String {
+    #[cfg(target_os = "windows")]
+    unsafe {
+        let mut st = WinSystemTime {
+            w_year: 0,
+            w_month: 0,
+            w_day_of_week: 0,
+            w_day: 0,
+            w_hour: 0,
+            w_minute: 0,
+            w_second: 0,
+            w_milliseconds: 0,
+        };
+        GetLocalTime(&mut st);
+        format!(
+            "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+            st.w_year, st.w_month, st.w_day, st.w_hour, st.w_minute, st.w_second
+        )
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        format!("Unix {}", secs)
+    }
+}
+
+fn log_to_app_log(app_dir: &std::path::Path, message: &str) {
+    let logs_dir = app_dir.join("logs");
+    if !logs_dir.exists() {
+        let _ = std::fs::create_dir_all(&logs_dir);
+    }
+    let log_path = logs_dir.join("app.log");
+    let line = format!("[{}] {}\n", current_timestamp(), message);
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+    {
+        use std::io::Write;
+        let _ = file.write_all(line.as_bytes());
+    }
+    println!("[app.log] {}", message);
+}
+
+/// Finds a random free port as high as possible in the dynamic port range (50000..=65534).
+fn find_free_high_port() -> Result<u16, String> {
+    use std::net::TcpListener;
+    use std::time::SystemTime;
+
+    let nanos = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(123456789);
+    let pid = std::process::id() as u128;
+    let mut seed = (nanos ^ (pid << 16)) as u64;
+
+    // Linear congruential generator for pseudo-random numbers
+    let mut next_rand = || {
+        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        (seed >> 32) as u32
+    };
+
+    const MIN_PORT: u16 = 50000;
+    const MAX_PORT: u16 = 65534;
+    const RANGE: u32 = (MAX_PORT - MIN_PORT + 1) as u32;
+
+    let start_offset = next_rand() % RANGE;
+    for i in 0..RANGE {
+        let port = (MIN_PORT as u32 + (start_offset + i) % RANGE) as u16;
+        if let Ok(listener) = TcpListener::bind(("127.0.0.1", port)) {
+            drop(listener);
+            return Ok(port);
+        }
+    }
+
+    // Fallback: ask OS for an ephemeral free port
+    TcpListener::bind(("127.0.0.1", 0))
+        .and_then(|l| l.local_addr())
+        .map(|addr| addr.port())
+        .map_err(|e| format!("Could not find any free port: {}", e))
+}
 
 const LOADING_HTML: &str = r#"<!doctype html>
 <html><head><meta charset="utf-8"><title>Time Tracker</title>
@@ -46,7 +147,7 @@ fn error_html(message: &str) -> String {
 
 /// Events sent from the background thread to the UI thread.
 enum UserEvent {
-    ServerReady,
+    ServerReady(u16),
     ServerFailed(String),
 }
 
@@ -84,12 +185,12 @@ fn find_java() -> PathBuf {
     PathBuf::from("java")
 }
 
-fn spawn_server() -> Result<Child, String> {
+fn spawn_server(port: u16) -> Result<Child, String> {
     let jar = find_server_jar().ok_or_else(|| {
         "Server jar not found next to the executable. Rebuild with cargo (unset TIME_TRACKER_SKIP_SERVER_BUILD)"
             .to_string()
     })?;
-    println!("Starting server: {:?}", jar);
+    println!("Starting server on port {}: {:?}", port, jar);
 
     let java = find_java();
     println!("Using Java: {:?}", java);
@@ -99,6 +200,7 @@ fn spawn_server() -> Result<Child, String> {
     }
     cmd.arg("-jar")
         .arg(&jar)
+        .arg(format!("--server.port={}", port))
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -112,8 +214,8 @@ fn spawn_server() -> Result<Child, String> {
         .map_err(|e| format!("Failed to start server using {:?} (set JAVA_HOME or add Java to PATH): {}", java, e))
 }
 
-fn wait_until_ready(server: &Mutex<Option<Child>>) -> Result<(), String> {
-    let addr = SocketAddr::from(([127, 0, 0, 1], SERVER_PORT));
+fn wait_until_ready(server: &Mutex<Option<Child>>, port: u16) -> Result<(), String> {
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let start = Instant::now();
     while start.elapsed() < STARTUP_TIMEOUT {
         if TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_ok() {
@@ -130,10 +232,13 @@ fn wait_until_ready(server: &Mutex<Option<Child>>) -> Result<(), String> {
     Err("Timed out waiting for the server to start".to_string())
 }
 
-fn stop_server(server: &Mutex<Option<Child>>) {
+fn stop_server(server: &Mutex<Option<Child>>, app_dir: Option<&std::path::Path>) {
     if let Some(mut child) = server.lock().unwrap().take() {
         let pid = child.id();
         println!("Stopping server (PID: {})...", pid);
+        if let Some(dir) = app_dir {
+            log_to_app_log(dir, &format!("Server stopped (PID: {})", pid));
+        }
 
         #[cfg(target_os = "windows")]
         {
@@ -147,24 +252,6 @@ fn stop_server(server: &Mutex<Option<Child>>) {
         let _ = child.kill();
         let _ = child.wait();
         println!("Server stopped successfully.");
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn kill_orphaned_server_if_port_busy() {
-    let addr = SocketAddr::from(([127, 0, 0, 1], SERVER_PORT));
-    if TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok() {
-        println!("Port {} is in use. Terminating orphaned process...", SERVER_PORT);
-        let script = format!(
-            "Get-NetTCPConnection -LocalPort {} -ErrorAction SilentlyContinue | \
-             ForEach-Object {{ Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }}",
-            SERVER_PORT
-        );
-        let _ = Command::new("powershell")
-            .args(["-NoProfile", "-Command", &script])
-            .creation_flags(CREATE_NO_WINDOW)
-            .output();
-        thread::sleep(Duration::from_millis(500));
     }
 }
 
@@ -182,7 +269,7 @@ work.default.hours.per.day=8
 work.start.date=
 ";
 
-fn ensure_default_config(app_dir: & std::path::Path) {
+fn ensure_default_config(app_dir: &std::path::Path) {
     let config_path = app_dir.join("config.properties");
     if !config_path.exists() {
         if let Err(e) = std::fs::write(&config_path, DEFAULT_CONFIG_CONTENT) {
@@ -195,9 +282,6 @@ fn ensure_default_config(app_dir: & std::path::Path) {
 
 fn main() {
     println!("Starting time_tracker_app...");
-
-    #[cfg(target_os = "windows")]
-    kill_orphaned_server_if_port_busy();
 
     let app_dir = std::env::current_exe()
         .ok()
@@ -238,33 +322,59 @@ fn main() {
 
     let server: Arc<Mutex<Option<Child>>> = Arc::new(Mutex::new(None));
 
-    // Start the server and wait for it off the UI thread so the spinner keeps animating.
+    // Start the server on a free high port and wait for it off the UI thread so the spinner keeps animating.
     {
         let server = Arc::clone(&server);
+        let app_dir_for_thread = app_dir.clone();
         thread::spawn(move || {
-            let result = spawn_server().and_then(|child| {
-                *server.lock().unwrap() = Some(child);
-                wait_until_ready(&server)
+            let port_res = find_free_high_port();
+            let result = port_res.and_then(|port| {
+                log_to_app_log(
+                    &app_dir_for_thread,
+                    &format!("Selected dynamic free port {}", port),
+                );
+                spawn_server(port).and_then(|child| {
+                    let pid = child.id();
+                    *server.lock().unwrap() = Some(child);
+                    match wait_until_ready(&server, port) {
+                        Ok(()) => {
+                            log_to_app_log(
+                                &app_dir_for_thread,
+                                &format!("Server successfully started on port {} (PID: {})", port, pid),
+                            );
+                            Ok(port)
+                        }
+                        Err(e) => {
+                            log_to_app_log(
+                                &app_dir_for_thread,
+                                &format!("Server on port {} failed to become ready: {}", port, e),
+                            );
+                            Err(e)
+                        }
+                    }
+                })
             });
             let _ = proxy.send_event(match result {
-                Ok(()) => UserEvent::ServerReady,
+                Ok(port) => UserEvent::ServerReady(port),
                 Err(msg) => UserEvent::ServerFailed(msg),
             });
         });
     }
 
     let server_exit = Arc::clone(&server);
+    let app_dir_exit = app_dir.clone();
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
         match event {
-            Event::UserEvent(UserEvent::ServerReady) => {
+            Event::UserEvent(UserEvent::ServerReady(port)) => {
                 if let Some(webview) = webview.as_ref() {
-                    let _ = webview.load_url(SERVER_URL);
+                    let server_url = format!("http://localhost:{}", port);
+                    let _ = webview.load_url(&server_url);
                 }
             }
             Event::UserEvent(UserEvent::ServerFailed(msg)) => {
                 eprintln!("{}", msg);
-                stop_server(&server_exit);
+                stop_server(&server_exit, Some(&app_dir_exit));
                 let html = error_html(&msg);
                 if let Some(webview) = webview.as_ref() {
                     let _ = webview.evaluate_script(&format!(
@@ -285,11 +395,11 @@ fn main() {
                 event: WindowEvent::Destroyed,
                 ..
             } => {
-                stop_server(&server_exit);
+                stop_server(&server_exit, Some(&app_dir_exit));
                 *control_flow = ControlFlow::Exit;
             }
             Event::LoopDestroyed => {
-                stop_server(&server_exit);
+                stop_server(&server_exit, Some(&app_dir_exit));
             }
             _ => {}
         }

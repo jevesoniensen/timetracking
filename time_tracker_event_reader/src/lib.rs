@@ -29,6 +29,8 @@ struct SyncState {
 #[allow(non_snake_case)]
 struct PsWinEvent {
     Id: u32,
+    #[serde(default)]
+    Provider: Option<String>,
     TimeCreated: String,
 }
 
@@ -77,30 +79,52 @@ pub fn sync_windows_events_with_config(config: impl Into<Config>) -> io::Result<
     let effective_start_time: Option<String> = match (&state.last_timestamp, &start_work_date) {
         (Some(last_ts), Some(start_date)) => {
             let start_ts = format!("{} 00:00:00", start_date);
-            if start_ts > *last_ts {
-                Some(start_ts)
+            let month_start = if last_ts.len() >= 7 {
+                format!("{}-01 00:00:00", &last_ts[..7])
+            } else {
+                last_ts.clone()
+            };
+            let candidate = if start_ts > month_start { start_ts } else { month_start };
+            Some(candidate)
+        }
+        (Some(last_ts), None) => {
+            if last_ts.len() >= 7 {
+                Some(format!("{}-01 00:00:00", &last_ts[..7]))
             } else {
                 Some(last_ts.clone())
             }
         }
-        (Some(last_ts), None) => Some(last_ts.clone()),
         (None, Some(start_date)) => Some(format!("{} 00:00:00", start_date)),
         (None, None) => None,
     };
 
     let start_time_filter = match &effective_start_time {
-        Some(ts) => format!("; StartTime=[datetime]'{}'", ts),
+        Some(ts) => format!(
+            "$startTime = [datetime]::ParseExact('{}', 'yyyy-MM-dd HH:mm:ss', [System.Globalization.CultureInfo]::InvariantCulture); $filter['StartTime'] = $startTime;",
+            ts
+        ),
         None => String::new(),
     };
 
-    // Event 6005 is Event log service started (Startup)
-    // Event 6006 is Event log service stopped (Shutdown)
+    // Query system power and session events from docs/windows-events-mapping.md:
+    // 7001 = User Logon (Start)
+    // 107  = System resumed from sleep (Start)
+    // 6005 = EventLog started / cold boot (Start)
+    // 1    = Power-Troubleshooter low power resume (Start)
+    // 7002 = User Logoff (End)
+    // 42   = System entering sleep (End)
+    // 1074 = User/system initiated shutdown or restart (End)
+    // 6006 = EventLog stopped / clean shutdown (End)
+    // 6008 = Unexpected shutdown (End)
     let ps_script = format!(
-        "Get-WinEvent -FilterHashtable @{{LogName='System'; Id=6005,6006{}}} -ErrorAction SilentlyContinue | \
+        "$filter = @{{LogName='System'; Id=6005,6006,6008,1074,42,107,7001,7002,1}}; \
+         {} \
+         Get-WinEvent -FilterHashtable $filter -ErrorAction SilentlyContinue | \
          Sort-Object TimeCreated | \
          ForEach-Object {{ \
              [PSCustomObject]@{{ \
                  Id = $_.Id; \
+                 Provider = $_.ProviderName; \
                  TimeCreated = $_.TimeCreated.ToString('yyyy-MM-dd HH:mm:ss') \
              }} \
          }} | ConvertTo-Json -Compress",
@@ -142,10 +166,18 @@ pub fn sync_windows_events_with_config(config: impl Into<Config>) -> io::Result<
     let mut latest_timestamp = state.last_timestamp.clone();
 
     for ev in ps_events {
-        let event_name = match ev.Id {
-            6005 => "STARTUP".to_string(),
-            6006 => "SHUTDOWN".to_string(),
-            _ => format!("UNKNOWN_{}", ev.Id),
+        let provider = ev.Provider.as_deref().unwrap_or("");
+        let (event_name, event_type) = match ev.Id {
+            7001 => ("LOGON".to_string(), "START".to_string()),
+            107 => ("RESUME".to_string(), "START".to_string()),
+            6005 => ("STARTUP".to_string(), "START".to_string()),
+            1 if provider.contains("Power-Troubleshooter") => ("WAKE".to_string(), "START".to_string()),
+            7002 => ("LOGOFF".to_string(), "END".to_string()),
+            42 => ("SLEEP".to_string(), "END".to_string()),
+            1074 => ("USER_SHUTDOWN".to_string(), "END".to_string()),
+            6006 => ("SHUTDOWN".to_string(), "END".to_string()),
+            6008 => ("UNEXPECTED_SHUTDOWN".to_string(), "END".to_string()),
+            _ => continue,
         };
 
         // Ignore any events before the configured start work date
@@ -154,18 +186,8 @@ pub fn sync_windows_events_with_config(config: impl Into<Config>) -> io::Result<
                 continue;
             }
         }
-
-        // Avoid duplicating the event if we filtered by the exact same StartTime
-        if let Some(last_ts) = &state.last_timestamp {
-            if ev.TimeCreated == *last_ts {
-                continue;
-            }
-        }
         
-        let new_ev = Event {
-            name: event_name,
-            timestamp: ev.TimeCreated.clone(),
-        };
+        let new_ev = Event::with_type(event_name, ev.TimeCreated.clone(), event_type);
 
         latest_timestamp = Some(ev.TimeCreated);
         new_events.push(new_ev);

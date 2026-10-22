@@ -11,13 +11,37 @@ use crate::config::Config;
 pub struct Event {
     pub name: String,
     pub timestamp: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub r#type: Option<String>,
 }
 
 impl Event {
     pub fn new(name: impl Into<String>, timestamp: impl Into<String>) -> Self {
+        let n = name.into();
+        let t = Self::infer_type(&n);
+        Self {
+            name: n,
+            timestamp: timestamp.into(),
+            r#type: t,
+        }
+    }
+
+    pub fn with_type(name: impl Into<String>, timestamp: impl Into<String>, r#type: impl Into<String>) -> Self {
         Self {
             name: name.into(),
             timestamp: timestamp.into(),
+            r#type: Some(r#type.into()),
+        }
+    }
+
+    pub fn infer_type(name: &str) -> Option<String> {
+        let upper = name.to_uppercase();
+        if upper.contains("START") || upper.contains("LOGON") || upper.contains("RESUME") || upper.contains("WAKE") {
+            Some("START".to_string())
+        } else if upper.contains("SHUTDOWN") || upper.contains("LOGOFF") || upper.contains("SLEEP") {
+            Some("END".to_string())
+        } else {
+            None
         }
     }
 

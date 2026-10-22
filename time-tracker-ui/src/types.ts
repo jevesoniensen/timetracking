@@ -1,6 +1,7 @@
 export interface TrackerEvent {
   name: string;
   timestamp: string;
+  type?: 'START' | 'END' | string;
 }
 
 export interface LunchConfig {
@@ -33,6 +34,8 @@ export interface DaySummary {
   isVacation: boolean; // Marked as vacation in user overrides
   firstStartup: TrackerEvent | null;
   lastShutdown: TrackerEvent | null;
+  effectiveStartTimestamp?: string | null;
+  effectiveEndTimestamp?: string | null;
   startWorkTime: string; // HH:mm:ss
   endWorkTime: string; // HH:mm:ss or "In Progress"
   isStartOverridden: boolean;

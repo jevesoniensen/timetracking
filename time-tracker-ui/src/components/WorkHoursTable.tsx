@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import type { DaySummary, DayStatus, LunchConfig, CustomBreak } from '../types';
-import { normalize24hTime } from '../utils/eventProcessor';
+import type { DaySummary, DayStatus, LunchConfig, CustomBreak, TrackerEvent } from '../types';
+import { normalize24hTime, formatTime, isStartEvent, isEndEvent } from '../utils/eventProcessor';
 
 interface WorkHoursTableProps {
   days: DaySummary[];
@@ -17,6 +17,8 @@ interface WorkHoursTableProps {
   onOpenCustomWorkDay?: () => void;
 }
 
+const HOURS_OPTIONS = Array.from({ length: 23 }, (_, i) => String(i + 1).padStart(2, '0'));
+const MINUTES_OPTIONS = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
 const TIME_24H_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 function time24ToSeconds(t: string): number {
@@ -48,8 +50,12 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
     date: string;
     field: 'start' | 'end';
   } | null>(null);
-  const [editValue, setEditValue] = useState('');
+  const [editHour, setEditHour] = useState('');
+  const [editMinute, setEditMinute] = useState('');
   const [editError, setEditError] = useState<string | null>(null);
+  const [activeDropdown, setActiveDropdown] = useState<'hour' | 'minute' | null>(null);
+  const hourInputRef = React.useRef<HTMLInputElement | null>(null);
+  const minuteInputRef = React.useRef<HTMLInputElement | null>(null);
 
   // State for adding a custom break
   const [addingBreakDate, setAddingBreakDate] = useState<string | null>(null);
@@ -95,15 +101,21 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
         : day.endWorkTime !== '—' && day.endWorkTime !== 'In Progress'
         ? normalize24hTime(day.endWorkTime)
         : '17:30';
+    const parts = currentVal.split(':');
+    const h = (parts[0] || '08').padStart(2, '0');
+    const m = (parts[1] || '00').slice(0, 2).padStart(2, '0');
+
     setEditingCell({ date: day.date, field });
-    setEditValue(currentVal);
+    setEditHour(h);
+    setEditMinute(m);
     setEditError(null);
   };
 
   const cancelEditing = (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     setEditingCell(null);
-    setEditValue('');
+    setEditHour('');
+    setEditMinute('');
     setEditError(null);
   };
 
@@ -113,33 +125,50 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
       return;
     }
 
-    const trimmed = editValue.trim();
-    if (trimmed !== '' && !TIME_24H_REGEX.test(trimmed)) {
-      setEditError('Use 24h format HH:mm (e.g. 08:30 or 17:45)');
+    const hTrim = editHour.trim();
+    const mTrim = editMinute.trim();
+
+    if (!hTrim && !mTrim) {
+      resetOverride(undefined as any, day, field);
+      cancelEditing();
       return;
     }
 
+    const hNum = parseInt(hTrim, 10);
+    const mNum = parseInt(mTrim, 10);
+
+    if (isNaN(hNum) || hNum < 0 || hNum > 23) {
+      setEditError('Hour must be 00–23');
+      return;
+    }
+    if (isNaN(mNum) || mNum < 0 || mNum > 59) {
+      setEditError('Minute must be 00–59');
+      return;
+    }
+
+    const formatted = `${String(hNum).padStart(2, '0')}:${String(mNum).padStart(2, '0')}`;
     const currentStartOverride = day.isStartOverridden ? normalize24hTime(day.startWorkTime) : null;
     const currentEndOverride = day.isEndOverridden ? normalize24hTime(day.endWorkTime) : null;
 
-    const newStart = field === 'start' ? (trimmed ? normalize24hTime(trimmed) : null) : currentStartOverride;
-    const newEnd = field === 'end' ? (trimmed ? normalize24hTime(trimmed) : null) : currentEndOverride;
+    const newStart = field === 'start' ? formatted : currentStartOverride;
+    const newEnd = field === 'end' ? formatted : currentEndOverride;
 
     onSaveOverride(day.date, newStart, newEnd, day.customBreaks, day.isVacation);
     setEditingCell(null);
-    setEditValue('');
+    setEditHour('');
+    setEditMinute('');
     setEditError(null);
   };
 
   const resetOverride = (
-    e: React.MouseEvent,
+    e: React.MouseEvent | undefined,
     day: DaySummary,
     field: 'start' | 'end' | 'both' | 'all'
   ) => {
-    e.stopPropagation();
+    if (e) e.stopPropagation();
     if (!onSaveOverride) return;
-    const currentStartOverride = day.isStartOverridden ? day.startWorkTime : null;
-    const currentEndOverride = day.isEndOverridden ? day.endWorkTime : null;
+    const currentStartOverride = day.isStartOverridden ? normalize24hTime(day.startWorkTime) : null;
+    const currentEndOverride = day.isEndOverridden ? normalize24hTime(day.endWorkTime) : null;
 
     if (field === 'all') {
       onSaveOverride(day.date, null, null, null, null);
@@ -156,8 +185,8 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
   const toggleDayVacation = (e: React.MouseEvent, day: DaySummary) => {
     e.stopPropagation();
     if (!onSaveOverride) return;
-    const currentStartOverride = day.isStartOverridden ? day.startWorkTime : null;
-    const currentEndOverride = day.isEndOverridden ? day.endWorkTime : null;
+    const currentStartOverride = day.isStartOverridden ? normalize24hTime(day.startWorkTime) : null;
+    const currentEndOverride = day.isEndOverridden ? normalize24hTime(day.endWorkTime) : null;
     onSaveOverride(
       day.date,
       currentStartOverride,
@@ -174,7 +203,7 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
     const nowHHmm = `${String(now.getHours()).padStart(2, '0')}:${String(
       now.getMinutes()
     ).padStart(2, '0')}`;
-    const currentEndOverride = day.isEndOverridden ? day.endWorkTime : null;
+    const currentEndOverride = day.isEndOverridden ? normalize24hTime(day.endWorkTime) : null;
     onSaveOverride(day.date, nowHHmm, currentEndOverride, day.customBreaks, day.isVacation);
   };
 
@@ -185,8 +214,228 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
     const nowHHmm = `${String(now.getHours()).padStart(2, '0')}:${String(
       now.getMinutes()
     ).padStart(2, '0')}`;
-    const currentStartOverride = day.isStartOverridden ? day.startWorkTime : null;
+    const currentStartOverride = day.isStartOverridden ? normalize24hTime(day.startWorkTime) : null;
     onSaveOverride(day.date, currentStartOverride, nowHHmm, day.customBreaks, day.isVacation);
+  };
+
+  const selectEventAsStart = (e: React.MouseEvent, day: DaySummary, ev: TrackerEvent) => {
+    e.stopPropagation();
+    if (!onSaveOverride) return;
+    const time = formatTime(ev.timestamp).slice(0, 5);
+    const currentEndOverride = day.isEndOverridden ? normalize24hTime(day.endWorkTime) : null;
+    onSaveOverride(day.date, time, currentEndOverride, day.customBreaks, day.isVacation);
+  };
+
+  const selectEventAsEnd = (e: React.MouseEvent, day: DaySummary, ev: TrackerEvent) => {
+    e.stopPropagation();
+    if (!onSaveOverride) return;
+    const time = formatTime(ev.timestamp).slice(0, 5);
+    const currentStartOverride = day.isStartOverridden ? normalize24hTime(day.startWorkTime) : null;
+    onSaveOverride(day.date, currentStartOverride, time, day.customBreaks, day.isVacation);
+  };
+
+  const renderTimeEditor = (day: DaySummary, field: 'start' | 'end') => {
+    return (
+      <div className="override-edit-group split-time-group" onClick={(e) => e.stopPropagation()}>
+        <div className="split-time-inputs">
+          <div
+            className={`split-field ${activeDropdown === 'hour' ? 'active' : ''}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              setActiveDropdown((prev) => (prev === 'hour' ? null : 'hour'));
+            }}
+          >
+            <input
+              ref={hourInputRef}
+              type="text"
+              className="split-input hour-input"
+              value={editHour}
+              placeholder="HH"
+              maxLength={2}
+              autoFocus
+              onClick={(e) => {
+                e.stopPropagation();
+                setActiveDropdown('hour');
+              }}
+              onChange={(e) => {
+                const val = e.target.value.replace(/\D/g, '').slice(0, 2);
+                setEditHour(val);
+                setEditError(null);
+                if (val.length === 2 && minuteInputRef.current) {
+                  minuteInputRef.current.focus();
+                  minuteInputRef.current.select();
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitEditing(day, field);
+                if (e.key === 'Escape') cancelEditing();
+                if (e.key === ':' || e.key === 'ArrowRight') {
+                  if (minuteInputRef.current) {
+                    e.preventDefault();
+                    minuteInputRef.current.focus();
+                    minuteInputRef.current.select();
+                  }
+                }
+                if (e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  const cur = parseInt(editHour || '1', 10);
+                  const next = cur >= 23 ? 1 : cur + 1;
+                  setEditHour(String(next).padStart(2, '0'));
+                }
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  const cur = parseInt(editHour || '1', 10);
+                  const prev = cur <= 1 ? 23 : cur - 1;
+                  setEditHour(String(prev).padStart(2, '0'));
+                }
+              }}
+            />
+            <span className="dropdown-arrow">▾</span>
+          </div>
+
+          <span className="split-time-sep">:</span>
+
+          <div
+            className={`split-field ${activeDropdown === 'minute' ? 'active' : ''}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              setActiveDropdown((prev) => (prev === 'minute' ? null : 'minute'));
+            }}
+          >
+            <input
+              ref={minuteInputRef}
+              type="text"
+              className="split-input minute-input"
+              value={editMinute}
+              placeholder="mm"
+              maxLength={2}
+              onClick={(e) => {
+                e.stopPropagation();
+                setActiveDropdown('minute');
+              }}
+              onChange={(e) => {
+                const val = e.target.value.replace(/\D/g, '').slice(0, 2);
+                setEditMinute(val);
+                setEditError(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitEditing(day, field);
+                if (e.key === 'Escape') cancelEditing();
+                if (e.key === 'Backspace' && !editMinute && hourInputRef.current) {
+                  hourInputRef.current.focus();
+                }
+                if (e.key === 'ArrowLeft' && hourInputRef.current) {
+                  hourInputRef.current.focus();
+                }
+                if (e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  const next = (parseInt(editMinute || '0', 10) + 1) % 60;
+                  setEditMinute(String(next).padStart(2, '0'));
+                }
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  const prev = (parseInt(editMinute || '0', 10) + 59) % 60;
+                  setEditMinute(String(prev).padStart(2, '0'));
+                }
+              }}
+            />
+            <span className="dropdown-arrow">▾</span>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          className="override-action-btn save"
+          onClick={() => commitEditing(day, field)}
+          title="Save override (HH:mm)"
+        >
+          ✓
+        </button>
+        <button
+          type="button"
+          className="override-action-btn cancel"
+          onClick={cancelEditing}
+          title="Cancel"
+        >
+          ✕
+        </button>
+        {((field === 'start' && day.isStartOverridden) || (field === 'end' && day.isEndOverridden)) && (
+          <button
+            type="button"
+            className="override-action-btn reset"
+            onClick={(e) => resetOverride(e, day, field)}
+            title="Reset to default event"
+          >
+            ↺
+          </button>
+        )}
+        {editError && <span className="override-error">{editError}</span>}
+
+        {activeDropdown === 'hour' && (
+          <div className="time-picker-popover hour-popover">
+            <div className="popover-header">
+              <span>Select Hour (01–23)</span>
+              <button
+                type="button"
+                className="popover-close-btn"
+                onClick={() => setActiveDropdown(null)}
+              >
+                ✕
+              </button>
+            </div>
+            <div className="popover-grid hours-grid">
+              {HOURS_OPTIONS.map((h) => (
+                <button
+                  key={h}
+                  type="button"
+                  className={`popover-chip ${editHour === h ? 'selected' : ''}`}
+                  onClick={() => {
+                    setEditHour(h);
+                    setActiveDropdown('minute');
+                    if (minuteInputRef.current) {
+                      minuteInputRef.current.focus();
+                      minuteInputRef.current.select();
+                    }
+                  }}
+                >
+                  {h}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeDropdown === 'minute' && (
+          <div className="time-picker-popover minute-popover">
+            <div className="popover-header">
+              <span>Select Minute (00–59)</span>
+              <button
+                type="button"
+                className="popover-close-btn"
+                onClick={() => setActiveDropdown(null)}
+              >
+                ✕
+              </button>
+            </div>
+            <div className="popover-grid minutes-grid">
+              {MINUTES_OPTIONS.map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  className={`popover-chip ${editMinute === m ? 'selected' : ''}`}
+                  onClick={() => {
+                    setEditMinute(m);
+                    setActiveDropdown(null);
+                  }}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
   };
 
   const openAddBreak = (e: React.MouseEvent, date: string) => {
@@ -582,47 +831,7 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
                       </td>
                       <td className="cell-time" onClick={(e) => e.stopPropagation()}>
                         {isEditingStart ? (
-                          <div className="override-edit-group">
-                            <input
-                              type="text"
-                              className="override-time-input"
-                              value={editValue}
-                              placeholder="HH:mm (24h)"
-                              autoFocus
-                              onChange={(e) => {
-                                setEditValue(e.target.value);
-                                setEditError(null);
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') commitEditing(day, 'start');
-                                if (e.key === 'Escape') cancelEditing();
-                              }}
-                            />
-                            <button
-                              className="override-action-btn save"
-                              onClick={() => commitEditing(day, 'start')}
-                              title="Save 24h override"
-                            >
-                              ✓
-                            </button>
-                            <button
-                              className="override-action-btn cancel"
-                              onClick={cancelEditing}
-                              title="Cancel"
-                            >
-                              ✕
-                            </button>
-                            {day.isStartOverridden && (
-                              <button
-                                className="override-action-btn reset"
-                                onClick={(e) => resetOverride(e, day, 'start')}
-                                title="Reset to system event"
-                              >
-                                ↺
-                              </button>
-                            )}
-                            {editError && <span className="override-error">{editError}</span>}
-                          </div>
+                          renderTimeEditor(day, 'start')
                         ) : (
                           <div className="time-cell-wrapper">
                             {hasStart ? (
@@ -790,47 +999,7 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
                       </td>
                       <td className="cell-time" onClick={(e) => e.stopPropagation()}>
                         {isEditingEnd ? (
-                          <div className="override-edit-group">
-                            <input
-                              type="text"
-                              className="override-time-input"
-                              value={editValue}
-                              placeholder="HH:mm (24h)"
-                              autoFocus
-                              onChange={(e) => {
-                                setEditValue(e.target.value);
-                                setEditError(null);
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') commitEditing(day, 'end');
-                                if (e.key === 'Escape') cancelEditing();
-                              }}
-                            />
-                            <button
-                              className="override-action-btn save"
-                              onClick={() => commitEditing(day, 'end')}
-                              title="Save 24h override"
-                            >
-                              ✓
-                            </button>
-                            <button
-                              className="override-action-btn cancel"
-                              onClick={cancelEditing}
-                              title="Cancel"
-                            >
-                              ✕
-                            </button>
-                            {day.isEndOverridden && (
-                              <button
-                                className="override-action-btn reset"
-                                onClick={(e) => resetOverride(e, day, 'end')}
-                                title="Reset to system event"
-                              >
-                                ↺
-                              </button>
-                            )}
-                            {editError && <span className="override-error">{editError}</span>}
-                          </div>
+                          renderTimeEditor(day, 'end')
                         ) : (
                           <div className="time-cell-wrapper">
                             {hasEnd ? (
@@ -1063,34 +1232,121 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
 
                             <div className="breakdown-header">
                               <h4>System Event Timeline for {day.formattedDate}</h4>
-                              <span className="breakdown-hint">All recorded Windows startup (6005) &amp; shutdown (6006) events</span>
+                              <span className="breakdown-hint">All recorded Windows start &amp; end events</span>
                             </div>
                             {day.allEvents.length === 0 ? (
                               <p className="breakdown-hint" style={{ paddingLeft: '0.5rem' }}>
-                                No startup or shutdown events recorded on this day.
+                                No startup, logon, sleep, or shutdown events recorded on this day.
                               </p>
                             ) : (
                               <div className="timeline-list">
                                 {day.allEvents.map((ev, idx) => {
-                                  const isStart = ev.name.toUpperCase() === 'STARTUP';
+                                  const isStart = isStartEvent(ev);
+                                  const isEnd = isEndEvent(ev);
+                                  const isActiveStart = Boolean(
+                                    day.effectiveStartTimestamp && ev.timestamp === day.effectiveStartTimestamp
+                                  );
+                                  const isActiveEnd = Boolean(
+                                    day.effectiveEndTimestamp && ev.timestamp === day.effectiveEndTimestamp
+                                  );
+                                  const isDefaultStart = Boolean(
+                                    day.firstStartup && ev.timestamp === day.firstStartup.timestamp
+                                  );
+                                  const isDefaultEnd = Boolean(
+                                    day.lastShutdown && ev.timestamp === day.lastShutdown.timestamp
+                                  );
+
                                   return (
-                                    <div key={idx} className={`timeline-item ${isStart ? 'startup' : 'shutdown'}`}>
+                                    <div
+                                      key={idx}
+                                      className={`timeline-item ${isStart ? 'startup' : 'shutdown'} ${
+                                        isActiveStart || isActiveEnd ? 'active-event' : ''
+                                      }`}
+                                    >
                                       <div className="timeline-marker">
                                         <span className="timeline-dot"></span>
                                       </div>
                                       <div className="timeline-body">
                                         <div className="timeline-badge-title">
                                           <span className={`event-name-tag ${isStart ? 'startup' : 'shutdown'}`}>
-                                            {isStart ? 'WINDOWS STARTUP' : 'WINDOWS SHUTDOWN'}
+                                            {ev.name.toUpperCase()}
                                           </span>
-                                          {idx === 0 && isStart && (
-                                            <span className="first-last-tag">First Startup (Start Work)</span>
+                                          <span className={`event-type-badge ${isStart ? 'start' : 'end'}`}>
+                                            {isStart ? 'START' : 'END'}
+                                          </span>
+                                          {isActiveStart && (
+                                            <span className="first-last-tag active-work-tag start">
+                                              {day.isStartOverridden ? 'Selected as Start of Work' : 'Default Start of Work'}
+                                            </span>
                                           )}
-                                          {idx === day.allEvents.length - 1 && !isStart && (
-                                            <span className="first-last-tag">Last Shutdown (End Work)</span>
+                                          {isActiveEnd && (
+                                            <span className="first-last-tag active-work-tag end">
+                                              {day.isEndOverridden ? 'Selected as End of Work' : 'Default End of Work'}
+                                            </span>
+                                          )}
+                                          {isDefaultStart && !isActiveStart && (
+                                            <span className="first-last-tag default-hint">
+                                              Default Start
+                                            </span>
+                                          )}
+                                          {isDefaultEnd && !isActiveEnd && (
+                                            <span className="first-last-tag default-hint">
+                                              Default End
+                                            </span>
                                           )}
                                         </div>
-                                        <span className="timeline-time">{ev.timestamp}</span>
+                                        <div className="timeline-actions-group">
+                                          <span className="timeline-time">{ev.timestamp}</span>
+                                          {onSaveOverride && (
+                                            <div className="timeline-buttons">
+                                              {/* START events can ONLY be selected as Start of Work */}
+                                              {isStart && (
+                                                !isActiveStart ? (
+                                                  <button
+                                                    type="button"
+                                                    className="timeline-btn select-start"
+                                                    onClick={(e) => selectEventAsStart(e, day, ev)}
+                                                    title={`Set ${ev.name} at ${formatTime(ev.timestamp)} as Start of Work`}
+                                                  >
+                                                    Set as Start
+                                                  </button>
+                                                ) : day.isStartOverridden ? (
+                                                  <button
+                                                    type="button"
+                                                    className="timeline-btn reset"
+                                                    onClick={(e) => resetOverride(e, day, 'start')}
+                                                    title="Reset Start of Work to default event"
+                                                  >
+                                                    Reset Start
+                                                  </button>
+                                                ) : null
+                                              )}
+
+                                              {/* END events can ONLY be selected as End of Work */}
+                                              {isEnd && (
+                                                !isActiveEnd ? (
+                                                  <button
+                                                    type="button"
+                                                    className="timeline-btn select-end"
+                                                    onClick={(e) => selectEventAsEnd(e, day, ev)}
+                                                    title={`Set ${ev.name} at ${formatTime(ev.timestamp)} as End of Work`}
+                                                  >
+                                                    Set as End
+                                                  </button>
+                                                ) : day.isEndOverridden ? (
+                                                  <button
+                                                    type="button"
+                                                    className="timeline-btn reset"
+                                                    onClick={(e) => resetOverride(e, day, 'end')}
+                                                    title="Reset End of Work to default event"
+                                                  >
+                                                    Reset End
+                                                  </button>
+                                                ) : null
+                                              )}
+                                            </div>
+                                          )}
+                                        </div>
                                       </div>
                                     </div>
                                   );

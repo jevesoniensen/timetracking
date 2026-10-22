@@ -8,7 +8,7 @@ import com.timetracker.dto.StartWorkDateRequest;
 import com.timetracker.dto.TrackerEvent;
 import com.timetracker.dto.VacationRequest;
 import com.timetracker.service.ConfigManager;
-import com.timetracker.service.FileSytemService;
+import com.timetracker.service.EventsManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -16,7 +16,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -27,11 +26,11 @@ public class EventController {
 
     private static final Logger log = LoggerFactory.getLogger(EventController.class);
 
-    private final FileSytemService fileSytemService;
+    private final EventsManager eventsManager;
     private final ConfigManager configManager;
 
-    public EventController(FileSytemService fileSytemService, ConfigManager configManager) {
-        this.fileSytemService = fileSytemService;
+    public EventController(EventsManager eventsManager, ConfigManager configManager) {
+        this.eventsManager = eventsManager;
         this.configManager = configManager;
     }
 
@@ -49,7 +48,7 @@ public class EventController {
     public Mono<ResponseEntity<LunchConfig>> saveStartWorkDate(@RequestBody StartWorkDateRequest req) {
         return Mono.fromCallable(() -> {
             if (req != null && req.startWorkDate() != null) {
-                fileSytemService.saveStartWorkDateToConfig(req.startWorkDate());
+                configManager.saveStartWorkDate(req.startWorkDate());
             }
             LunchConfig config = configManager.loadLunchConfig();
             log.info("LunchConfig: lunchStart={}, lunchEnd={}, hoursPerDay={}, startWorkDate={}",
@@ -60,43 +59,37 @@ public class EventController {
 
     @GetMapping("/overrides")
     public Mono<ResponseEntity<Map<String, DayOverride>>> getOverrides() {
-        return Mono.fromCallable(() -> ResponseEntity.ok(fileSytemService.loadUserOverrides()));
+        return Mono.fromCallable(() -> ResponseEntity.ok(eventsManager.loadUserOverrides()));
     }
 
     @GetMapping("/overrides/{month}")
     public Mono<ResponseEntity<Map<String, DayOverride>>> getOverridesForMonth(@PathVariable String month) {
-        return Mono.fromCallable(() -> ResponseEntity.ok(fileSytemService.loadUserOverridesForMonth(month)));
+        return Mono.fromCallable(() -> ResponseEntity.ok(eventsManager.loadUserOverridesForMonth(month)));
     }
 
     @PostMapping("/overrides")
     public Mono<ResponseEntity<Map<String, DayOverride>>> saveOverride(@RequestBody OverrideRequest req) {
-        return Mono.fromCallable(() -> ResponseEntity.ok(fileSytemService.saveOverride(req)));
+        return Mono.fromCallable(() -> ResponseEntity.ok(eventsManager.saveOverride(req)));
     }
 
     @PostMapping("/overrides/vacation")
     public Mono<ResponseEntity<Map<String, DayOverride>>> saveVacation(@RequestBody VacationRequest req) {
-        return Mono.fromCallable(() -> ResponseEntity.ok(fileSytemService.saveVacation(req)));
+        return Mono.fromCallable(() -> ResponseEntity.ok(eventsManager.saveVacation(req)));
     }
 
     @DeleteMapping("/overrides/{date}")
     public Mono<ResponseEntity<Map<String, DayOverride>>> deleteOverride(@PathVariable String date) {
-        return Mono.fromCallable(() -> ResponseEntity.ok(fileSytemService.deleteOverride(date)));
+        return Mono.fromCallable(() -> ResponseEntity.ok(eventsManager.deleteOverride(date)));
     }
 
     @GetMapping("/events")
     public Mono<ResponseEntity<EventsResponse>> getAllEvents() {
-        return Mono.fromCallable(() -> ResponseEntity.ok(fileSytemService.getAllEvents()));
+        return Mono.fromCallable(() -> ResponseEntity.ok(eventsManager.getAllEvents()));
     }
 
     @GetMapping("/events/{month}")
     public Mono<ResponseEntity<List<TrackerEvent>>> getEventsForMonth(@PathVariable String month) {
-        return getAllEvents().map(res -> {
-            EventsResponse body = res.getBody();
-            if (body != null && body.eventsByMonth().containsKey(month)) {
-                return ResponseEntity.ok(body.eventsByMonth().get(month));
-            }
-            return ResponseEntity.ok(Collections.emptyList());
-        });
+        return Mono.fromCallable(() -> ResponseEntity.ok(eventsManager.getEventsForMonth(month)));
     }
 
     @PostMapping(value = "/overrides/upload", consumes = MediaType.ALL_VALUE)
@@ -104,7 +97,7 @@ public class EventController {
             @RequestBody String rawContent,
             @RequestParam(value = "clearAll", defaultValue = "false") boolean clearAll
     ) {
-        return Mono.fromCallable(() -> ResponseEntity.ok(fileSytemService.uploadOverrides(rawContent, clearAll)));
+        return Mono.fromCallable(() -> ResponseEntity.ok(eventsManager.uploadOverrides(rawContent, clearAll)));
     }
 
     @PostMapping(value = "/events/upload", consumes = MediaType.ALL_VALUE)
@@ -112,6 +105,6 @@ public class EventController {
             @RequestBody String rawContent,
             @RequestParam(value = "clearAll", defaultValue = "false") boolean clearAll
     ) {
-        return Mono.fromCallable(() -> ResponseEntity.ok(fileSytemService.uploadEvents(rawContent, clearAll)));
+        return Mono.fromCallable(() -> ResponseEntity.ok(eventsManager.uploadEvents(rawContent, clearAll)));
     }
 }

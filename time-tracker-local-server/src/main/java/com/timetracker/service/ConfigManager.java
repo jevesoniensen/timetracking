@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.util.Properties;
 
 @Service
@@ -66,6 +67,12 @@ public class ConfigManager {
     private LunchConfig getDefaultLunchConfig() {
         log.info("Using default config (no external config.properties found): lunchStart={}, lunchEnd={}, hoursPerDay={}, startWorkDate={}", fallbackLunchStart, fallbackLunchEnd, fallbackWorkHoursPerDay, fallbackStartWorkDate);
         return new LunchConfig(fallbackLunchStart, fallbackLunchEnd, fallbackWorkHoursPerDay, fallbackStartWorkDate);
+    }
+
+    public synchronized void saveStartWorkDate(String startWorkDate) throws IOException {
+        String cleanDate = startWorkDate != null ? startWorkDate.trim() : "";
+        fileSytemService.saveStartWorkDateToConfig(cleanDate, fallbackLunchStart, fallbackLunchEnd, fallbackWorkHoursPerDay);
+        this.fallbackStartWorkDate = cleanDate;
     }
 
     public void setFallbackStartWorkDate(String fallbackStartWorkDate) {
