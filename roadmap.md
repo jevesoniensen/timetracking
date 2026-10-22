@@ -18,7 +18,7 @@ in the current day an icon should be shown do allow the user to end manually the
 
 ## add holidays
 
-## start server ina random port
+## start server in a random port
 
 ## Automated GitHub Releases
 
