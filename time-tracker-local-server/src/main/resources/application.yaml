@@ -11,8 +11,12 @@ spring:
         cachecontrol:
           no-cache: true
 
+app:
+  config-file: ${TIME_TRACKER_CONFIG_FILE:config.properties}
+  events-dir: ${TIME_TRACKER_EVENTS_DIR:events}
+  overrides-dir: ${TIME_TRACKER_OVERRIDES_DIR:overrides}
+
 lunch:
   default:
     start: "12:30"
     end: "13:30"
-

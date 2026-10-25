@@ -9,6 +9,10 @@ import com.timetracker.dto.LunchConfig;
 import com.timetracker.dto.OverrideRequest;
 import com.timetracker.dto.TrackerEvent;
 import com.timetracker.dto.VacationRequest;
+import com.timetracker.repository.EventsRepository;
+import com.timetracker.repository.FileSytemService;
+import com.timetracker.repository.UserOverridesRepository;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -29,10 +33,14 @@ public class EventsManager {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final FileSytemService fileSytemService;
+    private final EventsRepository eventsRepository;
+    private final UserOverridesRepository userOverridesRepository;
     private final ConfigManager configManager;
 
-    public EventsManager(FileSytemService fileSytemService, ConfigManager configManager) {
+    public EventsManager(FileSytemService fileSytemService, EventsRepository eventsRepository, UserOverridesRepository userOverridesRepository, ConfigManager configManager) {
         this.fileSytemService = fileSytemService;
+        this.eventsRepository = eventsRepository;
+        this.userOverridesRepository = userOverridesRepository;
         this.configManager = configManager;
     }
 
@@ -46,7 +54,7 @@ public class EventsManager {
         }
 
         try {
-            String lastTimestamp = fileSytemService.readSyncState().orElse(null);
+            String lastTimestamp = eventsRepository.readSyncState().orElse(null);
 
             LunchConfig lunchConfig = configManager.loadLunchConfig();
             String startWorkDate = lunchConfig.startWorkDate() != null ? lunchConfig.startWorkDate().trim() : "";
@@ -186,7 +194,7 @@ public class EventsManager {
 
                 for (Map.Entry<String, List<TrackerEvent>> entry : byMonth.entrySet()) {
                     String monthKey = entry.getKey();
-                    List<TrackerEvent> monthEvents = new ArrayList<>(fileSytemService.readEventsForMonth(monthKey));
+                    List<TrackerEvent> monthEvents = new ArrayList<>(eventsRepository.readEventsForMonth(monthKey));
 
                     for (TrackerEvent ev : entry.getValue()) {
                         boolean exists = monthEvents.stream().anyMatch(e ->
@@ -195,11 +203,11 @@ public class EventsManager {
                             monthEvents.add(ev);
                         }
                     }
-                    fileSytemService.writeEventsForMonth(monthKey, monthEvents);
+                    eventsRepository.writeEventsForMonth(monthKey, monthEvents);
                 }
 
                 if (latestTimestamp != null) {
-                    fileSytemService.writeSyncState(latestTimestamp);
+                    eventsRepository.writeSyncState(latestTimestamp);
                 }
                 log.info("Synced {} new Windows events", newEvents.size());
             }
@@ -220,7 +228,7 @@ public class EventsManager {
         boolean hasStartDate = startWorkDate.matches("^\\d{4}-\\d{2}-\\d{2}$");
         String startMonthKey = hasStartDate ? startWorkDate.substring(0, 7) : "";
 
-        Map<String, List<TrackerEvent>> allEvents = fileSytemService.readAllEventFiles();
+        Map<String, List<TrackerEvent>> allEvents = eventsRepository.readAllEventFiles();
         Map<String, List<TrackerEvent>> filteredMap = new TreeMap<>(Comparator.reverseOrder());
 
         for (Map.Entry<String, List<TrackerEvent>> entry : allEvents.entrySet()) {
@@ -258,7 +266,7 @@ public class EventsManager {
     // ---------------------------------------------------------
 
     public Map<String, DayOverride> loadUserOverrides() {
-        Map<String, DayOverride> userOverrides = fileSytemService.readAllUserOverrides();
+        Map<String, DayOverride> userOverrides = userOverridesRepository.readAllUserOverrides();
         LunchConfig lunchConfig = configManager.loadLunchConfig();
         String startWorkDate = lunchConfig.startWorkDate() != null ? lunchConfig.startWorkDate().trim() : "";
         if (startWorkDate.matches("^\\d{4}-\\d{2}-\\d{2}$")) {
@@ -268,14 +276,14 @@ public class EventsManager {
     }
 
     public Map<String, DayOverride> loadUserOverridesForMonth(String monthKey) {
-        return fileSytemService.readUserOverridesForMonth(monthKey);
+        return userOverridesRepository.readUserOverridesForMonth(monthKey);
     }
 
     public synchronized Map<String, DayOverride> saveOverride(OverrideRequest req) throws IOException {
         if (req != null && req.date() != null && req.date().trim().length() >= 7) {
             String date = req.date().trim();
             String monthKey = date.substring(0, 7);
-            Map<String, DayOverride> monthOverrides = fileSytemService.readUserOverridesForMonth(monthKey);
+            Map<String, DayOverride> monthOverrides = userOverridesRepository.readUserOverridesForMonth(monthKey);
             String start = req.start() != null && !req.start().isBlank() ? req.start().trim() : null;
             String end = req.end() != null && !req.end().isBlank() ? req.end().trim() : null;
             List<CustomBreak> breaks = new ArrayList<>();
@@ -292,7 +300,7 @@ public class EventsManager {
             } else {
                 monthOverrides.put(date, new DayOverride(start, end, breaks.isEmpty() ? null : breaks, isVacation));
             }
-            fileSytemService.writeUserOverridesForMonth(monthKey, monthOverrides);
+            userOverridesRepository.writeUserOverridesForMonth(monthKey, monthOverrides);
         }
         return loadUserOverrides();
     }
@@ -334,7 +342,7 @@ public class EventsManager {
 
                 String monthKey = dateStr.substring(0, 7);
                 Map<String, DayOverride> monthOverrides = modifiedMonths.computeIfAbsent(
-                        monthKey, fileSytemService::readUserOverridesForMonth
+                        monthKey, userOverridesRepository::readUserOverridesForMonth
                 );
 
                 DayOverride existing = monthOverrides.get(dateStr);
@@ -357,7 +365,7 @@ public class EventsManager {
             }
 
             for (Map.Entry<String, Map<String, DayOverride>> entry : modifiedMonths.entrySet()) {
-                fileSytemService.writeUserOverridesForMonth(entry.getKey(), entry.getValue());
+                userOverridesRepository.writeUserOverridesForMonth(entry.getKey(), entry.getValue());
             }
         }
         return loadUserOverrides();
@@ -367,9 +375,9 @@ public class EventsManager {
         if (date != null && date.trim().length() >= 7) {
             String trimmedDate = date.trim();
             String monthKey = trimmedDate.substring(0, 7);
-            Map<String, DayOverride> monthOverrides = fileSytemService.readUserOverridesForMonth(monthKey);
+            Map<String, DayOverride> monthOverrides = userOverridesRepository.readUserOverridesForMonth(monthKey);
             monthOverrides.remove(trimmedDate);
-            fileSytemService.writeUserOverridesForMonth(monthKey, monthOverrides);
+            userOverridesRepository.writeUserOverridesForMonth(monthKey, monthOverrides);
         }
         return loadUserOverrides();
     }
@@ -477,12 +485,12 @@ public class EventsManager {
 
     public synchronized EventsResponse uploadOverrides(String rawContent, boolean clearAll) throws IOException {
         if (clearAll) {
-            fileSytemService.clearAllOverrideFiles();
+            userOverridesRepository.clearAllOverrideFiles();
         }
 
         Map<String, Map<String, DayOverride>> parsedOverridesByMonth = parseOverridesFromText(rawContent);
         for (Map.Entry<String, Map<String, DayOverride>> entry : parsedOverridesByMonth.entrySet()) {
-            fileSytemService.writeUserOverridesForMonth(entry.getKey(), entry.getValue());
+            userOverridesRepository.writeUserOverridesForMonth(entry.getKey(), entry.getValue());
         }
 
         return getAllEvents();
@@ -528,13 +536,13 @@ public class EventsManager {
             String monthKey = entry.getKey();
             List<TrackerEvent> events = entry.getValue();
             events.sort(Comparator.comparing(TrackerEvent::timestamp));
-            fileSytemService.writeEventsForMonth(monthKey, events);
+            eventsRepository.writeEventsForMonth(monthKey, events);
             log.info("Overwrote month {} with {} events from upload", monthKey, events.size());
         }
 
         Map<String, Map<String, DayOverride>> parsedOverridesByMonth = parseOverridesFromText(rawContent);
         for (Map.Entry<String, Map<String, DayOverride>> entry : parsedOverridesByMonth.entrySet()) {
-            fileSytemService.writeUserOverridesForMonth(entry.getKey(), entry.getValue());
+            userOverridesRepository.writeUserOverridesForMonth(entry.getKey(), entry.getValue());
         }
 
         return getAllEvents();

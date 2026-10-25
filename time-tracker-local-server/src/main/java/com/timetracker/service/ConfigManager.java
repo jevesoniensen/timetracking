@@ -1,6 +1,9 @@
 package com.timetracker.service;
 
 import com.timetracker.dto.LunchConfig;
+import com.timetracker.repository.FileSytemService;
+
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -32,8 +35,25 @@ public class ConfigManager {
         this.fileSytemService = fileSytemService;
     }
 
+    /** At application start up, creates the config file with the default properties if it does not exist. */
+    @PostConstruct
+    void initDefaultConfig() {
+        Properties defaults = new Properties();
+        defaults.setProperty("lunch.default.start", fallbackLunchStart);
+        defaults.setProperty("lunch.default.end", fallbackLunchEnd);
+        defaults.setProperty("work.default.hours.per.day", String.valueOf(fallbackWorkHoursPerDay));
+        defaults.setProperty("work.start.date", fallbackStartWorkDate);
+        try {
+            if (fileSytemService.storePropertiesIfAbsent(defaults)) {
+                log.info("Created default config file at {}", fileSytemService.resolveConfigFile());
+            }
+        } catch (IOException e) {
+            log.warn("Failed to create default config file: {}", e.getMessage());
+        }
+    }
+
     public LunchConfig loadLunchConfig() {
-        return fileSytemService.loadConfigProperties()
+        return fileSytemService.loadProperties()
                 .map(this::toLunchConfig)
                 .orElseGet(this::getDefaultLunchConfig);
     }
@@ -71,7 +91,7 @@ public class ConfigManager {
 
     public synchronized void saveStartWorkDate(String startWorkDate) throws IOException {
         String cleanDate = startWorkDate != null ? startWorkDate.trim() : "";
-        fileSytemService.saveStartWorkDateToConfig(cleanDate, fallbackLunchStart, fallbackLunchEnd, fallbackWorkHoursPerDay);
+        fileSytemService.setConfigProperty("work.start.date", cleanDate);
         this.fallbackStartWorkDate = cleanDate;
     }
 
