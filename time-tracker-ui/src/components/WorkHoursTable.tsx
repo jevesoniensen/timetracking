@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import type { DaySummary, DayStatus, LunchConfig, CustomBreak, TrackerEvent } from '../types';
+import type { DaySummary, DayStatus, LunchConfig, CustomBreak, TrackerEvent, BreakIconType } from '../types';
 import { normalize24hTime, formatTime, isStartEvent, isEndEvent } from '../utils/eventProcessor';
+import { BreakIconPicker, getBreakIconLabel } from './BreakIcon';
 
 interface WorkHoursTableProps {
   days: DaySummary[];
@@ -61,6 +62,7 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
   const [addingBreakDate, setAddingBreakDate] = useState<string | null>(null);
   const [newBreakStart, setNewBreakStart] = useState('15:00');
   const [newBreakEnd, setNewBreakEnd] = useState('15:30');
+  const [newBreakIcon, setNewBreakIcon] = useState<BreakIconType>('coffee');
   const [breakError, setBreakError] = useState<string | null>(null);
 
   const toggleSort = (field: SortField) => {
@@ -443,6 +445,7 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
     setAddingBreakDate(date);
     setNewBreakStart('15:00');
     setNewBreakEnd('15:30');
+    setNewBreakIcon('coffee');
     setBreakError(null);
   };
 
@@ -472,11 +475,24 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
 
     const currentStartOverride = day.isStartOverridden ? day.startWorkTime : null;
     const currentEndOverride = day.isEndOverridden ? day.endWorkTime : null;
-    const nextBreaks: CustomBreak[] = [...(day.customBreaks || []), { start: s, end: e }];
+    const nextBreaks: CustomBreak[] = [
+      ...(day.customBreaks || []),
+      { start: s, end: e, icon: newBreakIcon },
+    ];
 
     onSaveOverride(day.date, currentStartOverride, currentEndOverride, nextBreaks, day.isVacation);
     setAddingBreakDate(null);
     setBreakError(null);
+  };
+
+  const updateCustomBreakIcon = (day: DaySummary, index: number, icon: BreakIconType) => {
+    if (!onSaveOverride) return;
+    const currentStartOverride = day.isStartOverridden ? day.startWorkTime : null;
+    const currentEndOverride = day.isEndOverridden ? day.endWorkTime : null;
+    const nextBreaks = day.customBreaks.map((b, idx) =>
+      idx === index ? { ...b, icon } : b
+    );
+    onSaveOverride(day.date, currentStartOverride, currentEndOverride, nextBreaks, day.isVacation);
   };
 
   const removeCustomBreak = (e: React.MouseEvent, day: DaySummary, index: number) => {
@@ -844,9 +860,10 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
                                     : 'Click to override start time (24h)'
                                 }
                               >
-                                <svg className="time-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <circle cx="12" cy="12" r="4" />
-                                  <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+                                <svg className="time-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+                                  <polyline points="10 17 15 12 10 7" />
+                                  <line x1="15" y1="12" x2="3" y2="12" />
                                 </svg>
                                 <span className="timestamp-mono">{day.startWorkTime}</span>
                                 {day.isStartOverridden && (
@@ -891,12 +908,12 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
                                       : 'Default lunch: no overlap with worked hours (0m deducted)'
                                   }
                                 >
-                                  <svg className="time-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <path d="M18 8h1a4 4 0 0 1 0 8h-1" />
-                                    <path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z" />
-                                    <line x1="6" y1="1" x2="6" y2="4" />
-                                    <line x1="10" y1="1" x2="10" y2="4" />
-                                    <line x1="14" y1="1" x2="14" y2="4" />
+                                  <svg className="time-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M2 4v4a1.5 1.5 0 0 0 3 0V4" />
+                                    <path d="M3.5 4v16" />
+                                    <circle cx="12.5" cy="12" r="5" />
+                                    <circle cx="12.5" cy="12" r="2" />
+                                    <path d="M20 20V4a3 3 0 0 1 2 3v5h-2" />
                                   </svg>
                                   <span className="timestamp-mono">{day.lunchWindow}</span>
                                 </div>
@@ -906,8 +923,12 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
                                 <div
                                   key={bIdx}
                                   className="time-pill custom-break"
-                                  title={`Custom break (${cb.start} – ${cb.end})`}
+                                  title={`${getBreakIconLabel(cb.icon)} (${cb.start} – ${cb.end})`}
                                 >
+                                  <BreakIconPicker
+                                    value={cb.icon}
+                                    onChange={(icon) => updateCustomBreakIcon(day, bIdx, icon)}
+                                  />
                                   <span className="timestamp-mono">
                                     {cb.start} – {cb.end}
                                   </span>
@@ -936,6 +957,10 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
 
                             {addingBreakDate === day.date && (
                               <div className="custom-break-editor">
+                                <BreakIconPicker
+                                  value={newBreakIcon}
+                                  onChange={setNewBreakIcon}
+                                />
                                 <input
                                   type="text"
                                   className="override-time-input break-input"
@@ -1012,9 +1037,10 @@ export const WorkHoursTable: React.FC<WorkHoursTableProps> = ({
                                     : 'Click to override end time (24h)'
                                 }
                               >
-                                <svg className="time-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
-                                  <line x1="12" y1="2" x2="12" y2="12" />
+                                <svg className="time-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                                  <polyline points="16 17 21 12 16 7" />
+                                  <line x1="21" y1="12" x2="9" y2="12" />
                                 </svg>
                                 <span className="timestamp-mono">{day.endWorkTime}</span>
                                 {day.isEndOverridden && (

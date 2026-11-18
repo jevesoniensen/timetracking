@@ -487,6 +487,7 @@ export function processEventsByMonth(
         .map((b) => ({
           start: normalize24hTime(b.start),
           end: normalize24hTime(b.end),
+          icon: b.icon || 'coffee',
         }));
 
       const isStartOverridden = overrideStart !== null;

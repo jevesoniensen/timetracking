@@ -1,0 +1,108 @@
+def isWindows = System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('windows')
+def releaseBuild = project.hasProperty('release')
+def cargoArgs = releaseBuild ? ['build', '--release'] : ['build']
+
+def configureRustEnv = { Exec execTask ->
+    def rustBin = isWindows ? file('D:/dev/sdk/rust/bin') : null
+    def currentPath = System.getenv('PATH') ?: ''
+    if (rustBin != null && rustBin.exists()) {
+        execTask.environment 'PATH', "${rustBin.absolutePath};${currentPath}"
+    }
+}
+
+def cargoExecutable = { ->
+    if (isWindows) {
+        def sdkCargo = file('D:/dev/sdk/rust/bin/cargo.exe')
+        if (sdkCargo.exists()) {
+            return sdkCargo.absolutePath
+        }
+        def userCargo = new File(System.getProperty('user.home'), '.cargo/bin/cargo.exe')
+        if (userCargo.exists()) {
+            return userCargo.absolutePath
+        }
+    }
+    return 'cargo'
+}
+
+tasks.register('buildReactApp', Exec) {
+    group = 'build'
+    description = 'Builds the React UI.'
+    workingDir file('time-tracker-ui')
+
+    if (isWindows) {
+        // Inject the venv Scripts directory into PATH so both 'npm' and 'node' are located.
+        def venvScripts = file('venv/Scripts').absolutePath
+        environment 'PATH', "${venvScripts};" + (System.getenv('PATH') ?: '')
+        commandLine 'cmd', '/c', 'npm install && npm run build'
+    } else {
+        def venvBin = file('venv/bin').absolutePath
+        environment 'PATH', "${venvBin}:" + (System.getenv('PATH') ?: '')
+        commandLine 'sh', '-c', 'npm install && npm run build'
+    }
+}
+
+tasks.register('copyReactBuild', Sync) {
+    group = 'build'
+    description = 'Copies the React UI build output into Spring Boot static resources.'
+    dependsOn 'buildReactApp'
+    from file('time-tracker-ui/dist')
+    into file('time-tracker-local-server/src/main/resources/static')
+}
+
+project(':time-tracker-local-server').tasks.matching { it.name == 'processResources' }.configureEach {
+    dependsOn rootProject.tasks.named('copyReactBuild')
+}
+
+tasks.register('buildSpringBoot') {
+    group = 'build'
+    description = 'Builds the Spring Boot server (and embedded React UI).'
+    dependsOn ':time-tracker-local-server:bootJar'
+}
+
+tasks.register('buildEventReader', Exec) {
+    group = 'build'
+    description = 'Builds the Rust Windows event reader library after Spring Boot.'
+    dependsOn 'buildSpringBoot'
+    workingDir file('time_tracker_event_reader')
+    configureRustEnv(it)
+    commandLine([cargoExecutable()] + cargoArgs)
+}
+
+tasks.register('buildTimeTrackerApp', Exec) {
+    group = 'build'
+    description = 'Builds the desktop application after Spring Boot and event reader.'
+    dependsOn 'buildEventReader'
+    workingDir file('time_tracker_app')
+    configureRustEnv(it)
+    environment 'TIME_TRACKER_SKIP_SERVER_BUILD', '1'
+    commandLine([cargoExecutable()] + cargoArgs)
+}
+
+tasks.register('build') {
+    group = 'build'
+    description = 'Builds Spring Boot, event reader, and time_tracker_app in order.'
+    dependsOn 'buildTimeTrackerApp'
+}
+
+tasks.register('cleanEventReader', Exec) {
+    group = 'build'
+    workingDir file('time_tracker_event_reader')
+    configureRustEnv(it)
+    commandLine(cargoExecutable(), 'clean')
+}
+
+tasks.register('cleanTimeTrackerApp', Exec) {
+    group = 'build'
+    workingDir file('time_tracker_app')
+    configureRustEnv(it)
+    commandLine(cargoExecutable(), 'clean')
+}
+
+tasks.register('clean') {
+    group = 'build'
+    description = 'Cleans Spring Boot, event reader, and time_tracker_app build outputs.'
+    dependsOn ':time-tracker-local-server:clean', 'cleanEventReader', 'cleanTimeTrackerApp'
+}
+
+defaultTasks 'build'
+

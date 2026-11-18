@@ -1,0 +1,4 @@
+rootProject.name = 'timetracking'
+
+include 'time-tracker-local-server'
+

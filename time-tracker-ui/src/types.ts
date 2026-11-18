@@ -11,9 +11,12 @@ export interface LunchConfig {
   startWorkDate?: string; // YYYY-MM-DD, empty until configured on first startup
 }
 
+export type BreakIconType = 'coffee' | 'doctor' | 'dentist' | 'school' | 'bed' | 'errand';
+
 export interface CustomBreak {
   start: string; // 24h HH:mm or HH:mm:ss
   end: string;   // 24h HH:mm or HH:mm:ss
+  icon?: BreakIconType | string | null;
 }
 
 export interface DayOverride {

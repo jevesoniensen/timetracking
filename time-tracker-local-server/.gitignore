@@ -41,3 +41,4 @@ sample-data
 .chat-history/**
 /.python-version
 /venv/
+src/main/resources/static/

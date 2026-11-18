@@ -27,26 +27,3 @@ dependencies {
 tasks.named('test') {
 	useJUnitPlatform()
 }
-
-task buildReactApp(type: Exec) {
-    workingDir '../time-tracker-ui'
-
-    if (System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('windows')) {
-        // We inject the venv Scripts directory into the PATH for this task execution
-        // so that both 'npm' and 'node' can be successfully located by the system.
-        def venvScripts = file('../venv/Scripts').absolutePath
-        environment 'PATH', "${venvScripts};" + System.getenv('PATH')
-        commandLine 'cmd', '/c', 'npm install && npm run build'
-    } else {
-        def venvBin = file('../venv/bin').absolutePath
-        environment 'PATH', "${venvBin}:" + System.getenv('PATH')
-        commandLine 'sh', '-c', 'npm install && npm run build'
-    }
-}
-task copyReactBuild(type: Sync) {
-    dependsOn buildReactApp
-    from '../time-tracker-ui/dist'
-    into 'src/main/resources/static'
-}
-
-processResources.dependsOn(copyReactBuild)

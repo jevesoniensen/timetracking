@@ -2243,7 +2243,7 @@ dependencies = [
 
 [[package]]
 name = "time_tracker_app"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "tao",
  "time_tracker_event_reader",

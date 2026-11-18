@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import type { CustomBreak, DayOverride } from '../types';
+import type { CustomBreak, DayOverride, BreakIconType } from '../types';
 import { normalize24hTime } from '../utils/eventProcessor';
+import { BreakIconPicker } from './BreakIcon';
 
 interface CustomWorkDayModalProps {
   isOpen: boolean;
@@ -36,6 +37,7 @@ export const CustomWorkDayModal: React.FC<CustomWorkDayModalProps> = ({
   const [breaks, setBreaks] = useState<CustomBreak[]>([]);
   const [newBreakStart, setNewBreakStart] = useState<string>('15:00');
   const [newBreakEnd, setNewBreakEnd] = useState<string>('15:30');
+  const [newBreakIcon, setNewBreakIcon] = useState<BreakIconType>('coffee');
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -80,7 +82,10 @@ export const CustomWorkDayModal: React.FC<CustomWorkDayModalProps> = ({
       setError('Break end time must be after break start time.');
       return;
     }
-    setBreaks((prev) => [...prev, { start: normalize24hTime(s), end: normalize24hTime(e) }]);
+    setBreaks((prev) => [
+      ...prev,
+      { start: normalize24hTime(s), end: normalize24hTime(e), icon: newBreakIcon },
+    ]);
     setError(null);
   };
 
@@ -278,6 +283,7 @@ export const CustomWorkDayModal: React.FC<CustomWorkDayModalProps> = ({
                 Optional Custom Breaks
               </span>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <BreakIconPicker value={newBreakIcon} onChange={setNewBreakIcon} />
                 <input
                   type="text"
                   className="override-time-input"
@@ -308,6 +314,14 @@ export const CustomWorkDayModal: React.FC<CustomWorkDayModalProps> = ({
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.45rem', marginTop: '0.25rem' }}>
                   {breaks.map((cb, idx) => (
                     <div key={idx} className="time-pill custom-break">
+                      <BreakIconPicker
+                        value={cb.icon}
+                        onChange={(icon) =>
+                          setBreaks((prev) =>
+                            prev.map((item, i) => (i === idx ? { ...item, icon } : item))
+                          )
+                        }
+                      />
                       <span className="timestamp-mono">
                         {cb.start} – {cb.end}
                       </span>
