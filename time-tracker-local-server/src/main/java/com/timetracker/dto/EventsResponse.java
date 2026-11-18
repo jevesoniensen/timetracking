@@ -7,6 +7,7 @@ public record EventsResponse(
         List<String> months,
         Map<String, List<TrackerEvent>> eventsByMonth,
         LunchConfig lunchConfig,
-        Map<String, DayOverride> userOverrides
+        Map<String, DayOverride> userOverrides,
+        Map<String, MonthSummary> monthSummaries,
+        OverallSaldoSummary overallSaldo
 ) {}
-

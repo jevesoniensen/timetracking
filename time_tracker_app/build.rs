@@ -17,6 +17,7 @@ fn main() {
     println!("cargo:rerun-if-changed={}", server_dir.join("src/main/resources/application.yaml").display());
     println!("cargo:rerun-if-changed={}", server_dir.join("src/main/resources/config.properties").display());
     println!("cargo:rerun-if-changed={}", server_dir.join("build.gradle").display());
+    println!("cargo:rerun-if-changed={}", server_dir.join("build/libs").display());
     println!("cargo:rerun-if-changed={}", root.join("time-tracker-ui").join("src").display());
     println!("cargo:rerun-if-changed={}", root.join("time-tracker-ui").join("package.json").display());
     println!("cargo:rerun-if-env-changed=TIME_TRACKER_SKIP_SERVER_BUILD");

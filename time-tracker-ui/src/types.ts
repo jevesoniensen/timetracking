@@ -90,9 +90,18 @@ export interface OverallSaldoSummary {
   vacationDaysCount: number;
 }
 
+export interface UploadPreviewResponse {
+  kind: 'events' | 'overrides';
+  months: string[];
+  totalCount: number;
+  dayCount: number;
+}
+
 export interface EventsApiResponse {
   months: string[];
   eventsByMonth: Record<string, TrackerEvent[]>;
   lunchConfig?: LunchConfig;
   userOverrides?: Record<string, DayOverride>;
+  monthSummaries?: Record<string, MonthSummary>;
+  overallSaldo?: OverallSaldoSummary;
 }

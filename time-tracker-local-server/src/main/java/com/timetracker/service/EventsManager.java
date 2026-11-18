@@ -6,8 +6,11 @@ import com.timetracker.dto.CustomBreak;
 import com.timetracker.dto.DayOverride;
 import com.timetracker.dto.EventsResponse;
 import com.timetracker.dto.LunchConfig;
+import com.timetracker.dto.MonthSummary;
+import com.timetracker.dto.OverallSaldoSummary;
 import com.timetracker.dto.OverrideRequest;
 import com.timetracker.dto.TrackerEvent;
+import com.timetracker.dto.UploadPreviewResponse;
 import com.timetracker.dto.VacationRequest;
 import com.timetracker.repository.EventsRepository;
 import com.timetracker.repository.FileSytemService;
@@ -36,12 +39,20 @@ public class EventsManager {
     private final EventsRepository eventsRepository;
     private final UserOverridesRepository userOverridesRepository;
     private final ConfigManager configManager;
+    private final WorkSummaryCalculator workSummaryCalculator;
 
-    public EventsManager(FileSytemService fileSytemService, EventsRepository eventsRepository, UserOverridesRepository userOverridesRepository, ConfigManager configManager) {
+    public EventsManager(
+            FileSytemService fileSytemService,
+            EventsRepository eventsRepository,
+            UserOverridesRepository userOverridesRepository,
+            ConfigManager configManager,
+            WorkSummaryCalculator workSummaryCalculator
+    ) {
         this.fileSytemService = fileSytemService;
         this.eventsRepository = eventsRepository;
         this.userOverridesRepository = userOverridesRepository;
         this.configManager = configManager;
+        this.workSummaryCalculator = workSummaryCalculator;
     }
 
     // ---------------------------------------------------------
@@ -248,9 +259,17 @@ public class EventsManager {
             }
         }
 
-        List<String> months = new ArrayList<>(filteredMap.keySet());
         Map<String, DayOverride> userOverrides = loadUserOverrides();
-        return new EventsResponse(months, filteredMap, lunchConfig, userOverrides);
+        Map<String, MonthSummary> monthSummaries = workSummaryCalculator.processEventsByMonth(filteredMap, lunchConfig, userOverrides);
+        OverallSaldoSummary overallSaldo = workSummaryCalculator.calculateOverallSaldo(monthSummaries.values());
+        List<String> months = new ArrayList<>(monthSummaries.keySet());
+        return new EventsResponse(months, filteredMap, lunchConfig, userOverrides, monthSummaries, overallSaldo);
+    }
+
+    public String exportMonthCsv(String monthKey) {
+        EventsResponse response = getAllEvents();
+        MonthSummary summary = response.monthSummaries() != null ? response.monthSummaries().get(monthKey) : null;
+        return workSummaryCalculator.exportMonthToCsv(summary);
     }
 
     public List<TrackerEvent> getEventsForMonth(String month) {
@@ -383,6 +402,126 @@ public class EventsManager {
         return loadUserOverrides();
     }
 
+    public List<String> previewVacationDates(String startDateStr, String endDateStr, boolean excludeWeekends) {
+        if (startDateStr == null || !startDateStr.trim().matches("^\\d{4}-\\d{2}-\\d{2}$")) {
+            return Collections.emptyList();
+        }
+        String sTrim = startDateStr.trim();
+        String eTrim = (endDateStr != null && endDateStr.trim().matches("^\\d{4}-\\d{2}-\\d{2}$"))
+                ? endDateStr.trim()
+                : sTrim;
+
+        LocalDate startDate = LocalDate.parse(sTrim);
+        LocalDate endDate = LocalDate.parse(eTrim);
+        if (endDate.isBefore(startDate)) {
+            LocalDate tmp = startDate;
+            startDate = endDate;
+            endDate = tmp;
+        }
+
+        LunchConfig lunchConfig = configManager.loadLunchConfig();
+        String startWorkDate = lunchConfig.startWorkDate() != null ? lunchConfig.startWorkDate().trim() : "";
+        boolean hasStartDate = startWorkDate.matches("^\\d{4}-\\d{2}-\\d{2}$");
+
+        List<String> dates = new ArrayList<>();
+        for (LocalDate cur = startDate; !cur.isAfter(endDate); cur = cur.plusDays(1)) {
+            String dStr = cur.toString();
+            if (hasStartDate && dStr.compareTo(startWorkDate) < 0) continue;
+            DayOfWeek dow = cur.getDayOfWeek();
+            boolean isWeekend = (dow == DayOfWeek.SATURDAY || dow == DayOfWeek.SUNDAY);
+            if (excludeWeekends && isWeekend) continue;
+            dates.add(dStr);
+        }
+        return dates;
+    }
+
+    public UploadPreviewResponse previewUpload(String rawContent, String requestedMode) {
+        if (rawContent == null || rawContent.isBlank()) {
+            String mode = "overrides".equalsIgnoreCase(requestedMode) ? "overrides" : "events";
+            return new UploadPreviewResponse(mode, Collections.emptyList(), 0, 0);
+        }
+
+        Map<String, List<TrackerEvent>> eventsByMonth = parseEventsFromText(rawContent, false);
+        int eventCount = eventsByMonth.values().stream().mapToInt(List::size).sum();
+
+        Map<String, Map<String, DayOverride>> overridesByMonth = parseOverridesFromText(rawContent);
+        int overrideDaysCount = overridesByMonth.values().stream().mapToInt(Map::size).sum();
+        int overrideLinesCount = countValidOverrideLines(rawContent);
+
+        String effectiveMode = "overrides".equalsIgnoreCase(requestedMode) ? "overrides" : "events";
+        if (overrideLinesCount > 0 && eventCount == 0) {
+            effectiveMode = "overrides";
+        } else if (eventCount > 0 && overrideLinesCount == 0) {
+            effectiveMode = "events";
+        }
+
+        if ("overrides".equals(effectiveMode)) {
+            List<String> months = new ArrayList<>(overridesByMonth.keySet());
+            months.sort(Comparator.reverseOrder());
+            return new UploadPreviewResponse("overrides", months, overrideLinesCount, overrideDaysCount);
+        } else {
+            List<String> months = new ArrayList<>(eventsByMonth.keySet());
+            months.sort(Comparator.reverseOrder());
+            return new UploadPreviewResponse("events", months, eventCount, 0);
+        }
+    }
+
+    private int countValidOverrideLines(String rawContent) {
+        int count = 0;
+        for (String line : rawContent.split("\\r?\\n")) {
+            String trimmed = line.trim();
+            if (trimmed.isEmpty() || !trimmed.contains("|")) continue;
+            String[] parts = trimmed.split("\\|");
+            if (parts.length < 2) continue;
+            String p0 = parts[0].trim();
+            String p1 = parts[1].trim();
+            String p2 = parts.length >= 3 ? parts[2].trim() : "";
+            if ((p0.equalsIgnoreCase("VACATION") || p0.equalsIgnoreCase("OVERRIDE_VACATION")) && p1.matches("^\\d{4}-\\d{2}-\\d{2}$")) {
+                count++;
+            } else if (parts.length >= 3 && (p0.equalsIgnoreCase("OVERRIDE_IN") || p0.equalsIgnoreCase("OVERRIDE_OUT"))
+                    && p1.matches("^\\d{4}-\\d{2}-\\d{2}$") && !p2.isEmpty()) {
+                count++;
+            } else if (parts.length >= 3 && p0.matches("^\\d{4}-\\d{2}-\\d{2}$") && !p1.isEmpty() && !p2.isEmpty()) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private Map<String, List<TrackerEvent>> parseEventsFromText(String rawContent, boolean filterByStartWorkDate) {
+        LunchConfig lunchConfig = configManager.loadLunchConfig();
+        String startWorkDate = lunchConfig.startWorkDate() != null ? lunchConfig.startWorkDate().trim() : "";
+        boolean hasStartDate = filterByStartWorkDate && startWorkDate.matches("^\\d{4}-\\d{2}-\\d{2}$");
+
+        Map<String, List<TrackerEvent>> parsedByMonth = new HashMap<>();
+        String[] lines = rawContent.split("\\r?\\n");
+        for (String line : lines) {
+            line = line.trim();
+            if (line.isEmpty() || !line.contains("|")) continue;
+
+            String[] parts = line.split("\\|");
+            if (parts.length >= 2) {
+                String name = parts[0].trim();
+                String timestamp = parts[1].trim();
+                String type = parts.length >= 3 ? parts[2].trim().toUpperCase() : null;
+                String inferredType = type != null && (type.equals("START") || type.equals("END"))
+                        ? type
+                        : TrackerEvent.inferType(name);
+
+                if (inferredType != null && timestamp.matches("^\\d{4}-\\d{2}-\\d{2}.*")) {
+                    String dateStr = timestamp.substring(0, 10);
+                    if (hasStartDate && dateStr.compareTo(startWorkDate) < 0) {
+                        continue;
+                    }
+                    String monthKey = timestamp.substring(0, 7);
+                    parsedByMonth.computeIfAbsent(monthKey, k -> new ArrayList<>())
+                            .add(new TrackerEvent(name, timestamp, inferredType));
+                }
+            }
+        }
+        return parsedByMonth;
+    }
+
     // ---------------------------------------------------------
     // Uploads
     // ---------------------------------------------------------
@@ -502,36 +641,7 @@ public class EventsManager {
             fileSytemService.clearAllEventFiles();
         }
 
-        LunchConfig lunchConfig = configManager.loadLunchConfig();
-        String startWorkDate = lunchConfig.startWorkDate() != null ? lunchConfig.startWorkDate().trim() : "";
-        boolean hasStartDate = startWorkDate.matches("^\\d{4}-\\d{2}-\\d{2}$");
-
-        Map<String, List<TrackerEvent>> parsedByMonth = new HashMap<>();
-        String[] lines = rawContent.split("\\r?\\n");
-        for (String line : lines) {
-            line = line.trim();
-            if (line.isEmpty() || !line.contains("|")) continue;
-
-            String[] parts = line.split("\\|");
-            if (parts.length >= 2) {
-                String name = parts[0].trim();
-                String timestamp = parts[1].trim();
-                String type = parts.length >= 3 ? parts[2].trim().toUpperCase() : null;
-                String inferredType = type != null && (type.equals("START") || type.equals("END"))
-                        ? type
-                        : TrackerEvent.inferType(name);
-
-                if (inferredType != null && timestamp.matches("^\\d{4}-\\d{2}-\\d{2}.*")) {
-                    String dateStr = timestamp.substring(0, 10);
-                    if (hasStartDate && dateStr.compareTo(startWorkDate) < 0) {
-                        continue;
-                    }
-                    String monthKey = timestamp.substring(0, 7);
-                    parsedByMonth.computeIfAbsent(monthKey, k -> new ArrayList<>())
-                            .add(new TrackerEvent(name, timestamp, inferredType));
-                }
-            }
-        }
+        Map<String, List<TrackerEvent>> parsedByMonth = parseEventsFromText(rawContent, true);
 
         for (Map.Entry<String, List<TrackerEvent>> entry : parsedByMonth.entrySet()) {
             String monthKey = entry.getKey();

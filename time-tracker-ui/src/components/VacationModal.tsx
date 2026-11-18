@@ -1,5 +1,4 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { expandVacationDateRange } from '../utils/eventProcessor';
 import type { DayOverride } from '../types';
 
 interface VacationModalProps {
@@ -28,6 +27,7 @@ export const VacationModal: React.FC<VacationModalProps> = ({
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   const [excludeWeekends, setExcludeWeekends] = useState<boolean>(true);
+  const [previewDates, setPreviewDates] = useState<string[]>([]);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,16 +46,32 @@ export const VacationModal: React.FC<VacationModalProps> = ({
 
   const effectiveEndDate = mode === 'day' ? startDate : endDate;
 
-  const previewDates = useMemo(() => {
-    if (!DATE_REGEX.test(startDate)) return [];
-    if (mode === 'period' && !DATE_REGEX.test(endDate)) return [];
-    return expandVacationDateRange(
+  useEffect(() => {
+    if (!isOpen || !DATE_REGEX.test(startDate) || (mode === 'period' && !DATE_REGEX.test(endDate))) {
+      setPreviewDates([]);
+      return;
+    }
+    let cancelled = false;
+    const skipWk = mode === 'period' ? excludeWeekends : false;
+    const params = new URLSearchParams({
       startDate,
-      effectiveEndDate,
-      mode === 'period' ? excludeWeekends : false,
-      startWorkDate
-    );
-  }, [startDate, endDate, effectiveEndDate, mode, excludeWeekends, startWorkDate]);
+      endDate: effectiveEndDate,
+      excludeWeekends: String(skipWk),
+    });
+    fetch(`/api/overrides/vacation/preview?${params.toString()}`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((dates: string[]) => {
+        if (!cancelled && Array.isArray(dates)) {
+          setPreviewDates(dates);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setPreviewDates([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, startDate, endDate, effectiveEndDate, mode, excludeWeekends]);
 
   const existingVacationDates = useMemo(() => {
     return Object.entries(userOverrides)

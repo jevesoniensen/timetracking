@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import type { CustomBreak, DayOverride, BreakIconType } from '../types';
-import { normalize24hTime } from '../utils/eventProcessor';
 import { BreakIconPicker } from './BreakIcon';
+
+const normalize24hTime = (t: string): string => t.trim().slice(0, 5);
 
 interface CustomWorkDayModalProps {
   isOpen: boolean;

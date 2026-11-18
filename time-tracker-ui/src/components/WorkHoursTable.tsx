@@ -1,7 +1,11 @@
 import React, { useState } from 'react';
 import type { DaySummary, DayStatus, LunchConfig, CustomBreak, TrackerEvent, BreakIconType } from '../types';
-import { normalize24hTime, formatTime, isStartEvent, isEndEvent } from '../utils/eventProcessor';
 import { BreakIconPicker, getBreakIconLabel } from './BreakIcon';
+
+const normalize24hTime = (t: string): string => t.trim().slice(0, 5);
+const formatTime = (timestamp: string): string => timestamp.split(' ')[1] || timestamp;
+const isStartEvent = (ev: TrackerEvent): boolean => ev.type?.toUpperCase() === 'START';
+const isEndEvent = (ev: TrackerEvent): boolean => ev.type?.toUpperCase() === 'END';
 
 interface WorkHoursTableProps {
   days: DaySummary[];

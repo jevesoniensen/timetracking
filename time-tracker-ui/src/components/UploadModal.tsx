@@ -1,8 +1,5 @@
-import React, { useState, useRef, useMemo, useEffect } from 'react';
-import {
-  parsePipeDelimitedEvents,
-  parsePipeDelimitedOverrides,
-} from '../utils/eventProcessor';
+import React, { useState, useRef, useEffect } from 'react';
+import type { UploadPreviewResponse } from '../types';
 
 export type UploadMode = 'events' | 'overrides';
 
@@ -27,6 +24,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
   const [clearAll, setClearAll] = useState<boolean>(false);
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [parsedPreview, setParsedPreview] = useState<UploadPreviewResponse | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -37,28 +35,31 @@ export const UploadModal: React.FC<UploadModalProps> = ({
     }
   }, [isOpen, initialMode]);
 
-  const parsedPreview = useMemo(() => {
-    if (!fileContent.trim()) return null;
-    if (mode === 'overrides') {
-      const { overridesByDate, months, lineCount } = parsePipeDelimitedOverrides(fileContent);
-      const dayCount = Object.keys(overridesByDate).length;
-      return {
-        months,
-        totalCount: lineCount,
-        dayCount,
-        kind: 'overrides' as const,
-      };
-    } else {
-      const map = parsePipeDelimitedEvents(fileContent);
-      const months = Object.keys(map);
-      const totalCount = Object.values(map).reduce((acc, list) => acc + list.length, 0);
-      return {
-        months,
-        totalCount,
-        dayCount: 0,
-        kind: 'events' as const,
-      };
+  useEffect(() => {
+    if (!fileContent.trim()) {
+      setParsedPreview(null);
+      return;
     }
+    let cancelled = false;
+    fetch(`/api/upload/preview?mode=${mode}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: fileContent,
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: UploadPreviewResponse | null) => {
+        if (cancelled || !data) return;
+        setParsedPreview(data);
+        if (data.kind && data.kind !== mode && data.totalCount > 0) {
+          setMode(data.kind);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setParsedPreview(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [fileContent, mode]);
 
   if (!isOpen) return null;
@@ -71,15 +72,6 @@ export const UploadModal: React.FC<UploadModalProps> = ({
       const text = e.target?.result as string;
       if (text) {
         setFileContent(text);
-        // Auto-detect if user dropped an override file in events mode or vice versa
-        const overrideCheck = parsePipeDelimitedOverrides(text);
-        const eventCheck = parsePipeDelimitedEvents(text);
-        const eventCount = Object.values(eventCheck).reduce((a, l) => a + l.length, 0);
-        if (overrideCheck.lineCount > 0 && eventCount === 0) {
-          setMode('overrides');
-        } else if (eventCount > 0 && overrideCheck.lineCount === 0) {
-          setMode('events');
-        }
       }
     };
     reader.onerror = () => {
@@ -101,7 +93,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
       setError('Please choose a file first.');
       return;
     }
-    if (!parsedPreview || parsedPreview.totalCount === 0) {
+    if (parsedPreview && parsedPreview.totalCount === 0) {
       setError(
         mode === 'overrides'
           ? 'No valid overrides found. Expected OVERRIDE_IN|date|time, OVERRIDE_OUT|date|time, or date|start|end.'
@@ -115,6 +107,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
       onClose();
       setFileContent('');
       setFileName('');
+      setParsedPreview(null);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Upload failed');
     }
