@@ -47,9 +47,8 @@ jobs:
         working-directory: time_tracker_event_reader
         run: cargo test
 
-      - name: Build Time Tracker App (UI + Server + JRE + Desktop App)
-        working-directory: time_tracker_app
-        run: cargo build --release
+      - name: Build Time Tracker App (UI + Server + Event Reader + JRE + Desktop App)
+        run: .\gradlew.bat build -Prelease --no-daemon --console=plain
 
       - name: Stage Windows 11 release bundle
         shell: pwsh

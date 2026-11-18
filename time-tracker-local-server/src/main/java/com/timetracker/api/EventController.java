@@ -1,4 +1,4 @@
-package com.timetracker;
+package com.timetracker.api;
 
 import com.timetracker.dto.DayOverride;
 import com.timetracker.dto.EventsResponse;

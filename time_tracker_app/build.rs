@@ -36,54 +36,63 @@ fn main() {
         println!("cargo:warning=config.properties copied to {}", dst_config.display());
     }
 
-    if env::var_os("TIME_TRACKER_SKIP_SERVER_BUILD").is_some() {
-        println!("cargo:warning=Skipping Spring Boot build (TIME_TRACKER_SKIP_SERVER_BUILD set)");
-        return;
-    }
-
-    // 1. Build the Spring Boot jar (this also builds the React UI via Gradle).
-    let mut cmd = if cfg!(target_os = "windows") {
-        let mut c = Command::new("cmd");
-        c.args(["/c", "gradlew.bat", "bootJar", "--console=plain"]);
-        c
+    let skip_gradle = env::var_os("TIME_TRACKER_SKIP_SERVER_BUILD").is_some();
+    if skip_gradle {
+        println!("cargo:warning=Skipping Spring Boot Gradle build (TIME_TRACKER_SKIP_SERVER_BUILD set)");
     } else {
-        let mut c = Command::new("sh");
-        c.args(["./gradlew", "bootJar", "--console=plain"]);
-        c
-    };
-    cmd.current_dir(&server_dir);
+        // 1. Build the Spring Boot jar (this also builds the React UI via Gradle).
+        let mut cmd = if cfg!(target_os = "windows") {
+            let mut c = Command::new("cmd");
+            c.args(["/c", "gradlew.bat", "bootJar", "--console=plain"]);
+            c
+        } else {
+            let mut c = Command::new("sh");
+            c.args(["./gradlew", "bootJar", "--console=plain"]);
+            c
+        };
+        cmd.current_dir(&server_dir);
 
-    if env::var_os("JAVA_HOME").is_none() {
-        let dev_sdk = Path::new(r"D:\dev\sdk\java\jdk-25.0.4.1+1");
-        if dev_sdk.exists() {
-            cmd.env("JAVA_HOME", dev_sdk);
-            if let Some(path) = env::var_os("PATH") {
-                let mut new_path = dev_sdk.join("bin").into_os_string();
-                new_path.push(";");
-                new_path.push(path);
-                cmd.env("PATH", new_path);
+        if env::var_os("JAVA_HOME").is_none() {
+            let dev_sdk = Path::new(r"D:\dev\sdk\java\jdk-25.0.4.1+1");
+            if dev_sdk.exists() {
+                cmd.env("JAVA_HOME", dev_sdk);
+                if let Some(path) = env::var_os("PATH") {
+                    let mut new_path = dev_sdk.join("bin").into_os_string();
+                    new_path.push(";");
+                    new_path.push(path);
+                    cmd.env("PATH", new_path);
+                }
             }
         }
-    }
 
-    let status = cmd.status();
-    match status {
-        Ok(s) if s.success() => {}
-        Ok(s) => panic!("Gradle bootJar failed with {}", s),
-        Err(e) => panic!("Could not run Gradle in {:?}: {}", server_dir, e),
+        let status = cmd.status();
+        match status {
+            Ok(s) if s.success() => {}
+            Ok(s) => panic!("Gradle bootJar failed with {}", s),
+            Err(e) => panic!("Could not run Gradle in {:?}: {}", server_dir, e),
+        }
     }
 
     // 2. Locate the executable jar (skip the "-plain" jar).
     let libs = server_dir.join("build").join("libs");
     let jar = fs::read_dir(&libs)
-        .unwrap_or_else(|e| panic!("Cannot read {:?}: {}", libs, e))
+        .ok()
+        .into_iter()
+        .flatten()
         .filter_map(|e| e.ok().map(|e| e.path()))
         .filter(|p| {
             let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
             name.ends_with(".jar") && !name.ends_with("-plain.jar")
         })
-        .max_by_key(|p| fs::metadata(p).and_then(|m| m.modified()).ok())
-        .unwrap_or_else(|| panic!("No bootJar found in {:?}", libs));
+        .max_by_key(|p| fs::metadata(p).and_then(|m| m.modified()).ok());
+
+    let Some(jar) = jar else {
+        if skip_gradle {
+            println!("cargo:warning=No bootJar found in {:?}; skipping jar copy and JRE creation", libs);
+            return;
+        }
+        panic!("No bootJar found in {:?}", libs);
+    };
 
     // 3. Copy it to the target profile dir (e.g. target/debug), next to the executable.
     copy_jar(&jar, &profile_dir.join(JAR_NAME));

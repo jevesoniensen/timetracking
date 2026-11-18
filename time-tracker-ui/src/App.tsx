@@ -456,7 +456,6 @@ function App() {
     <div className="app-shell">
       <div className="app-container">
         <Header
-          isLive={isLive}
           isLoading={isLoading}
           onRefresh={fetchEvents}
           onExportCsv={handleExportCsv}
@@ -496,19 +495,23 @@ function App() {
 
         {activeMonthSummary ? (
           <main className="content-area">
-            <MetricsCards
-              summary={activeMonthSummary}
-              lunchConfig={lunchConfig}
-              overallSaldo={overallSaldo}
-            />
-            <WorkHoursTable
-              days={activeMonthSummary.days}
-              monthLabel={activeMonthSummary.monthLabel}
-              lunchConfig={lunchConfig}
-              onSaveOverride={handleSaveOverride}
-              onOpenVacation={() => setIsVacationModalOpen(true)}
-              onOpenCustomWorkDay={() => setIsCustomWorkDayModalOpen(true)}
-            />
+            <div className="main-table-column">
+              <WorkHoursTable
+                days={activeMonthSummary.days}
+                monthLabel={activeMonthSummary.monthLabel}
+                lunchConfig={lunchConfig}
+                onSaveOverride={handleSaveOverride}
+                onOpenVacation={() => setIsVacationModalOpen(true)}
+                onOpenCustomWorkDay={() => setIsCustomWorkDayModalOpen(true)}
+              />
+            </div>
+            <aside className="metrics-sidebar" aria-label="Monthly statistics">
+              <MetricsCards
+                summary={activeMonthSummary}
+                lunchConfig={lunchConfig}
+                overallSaldo={overallSaldo}
+              />
+            </aside>
           </main>
         ) : (
           <div className="empty-container">
@@ -551,6 +554,14 @@ function App() {
             }
           }}
         />
+      </div>
+
+      <div
+        className={`status-badge bottom-right ${isLive ? 'live' : 'fallback'}`}
+        title={isLive ? 'Local Server Connected' : 'Sample Mode (Server Disconnected)'}
+        aria-label={isLive ? 'Local Server Connected' : 'Sample Mode (Server Disconnected)'}
+      >
+        <span className="status-dot"></span>
       </div>
     </div>
   );

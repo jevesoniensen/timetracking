@@ -1,5 +1,6 @@
 package com.timetracker;
 
+import com.timetracker.api.EventController;
 import com.timetracker.dto.LunchConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

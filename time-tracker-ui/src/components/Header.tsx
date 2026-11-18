@@ -1,7 +1,6 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 
 interface HeaderProps {
-  isLive: boolean;
   isLoading: boolean;
   onRefresh: () => void;
   onExportCsv: () => void;
@@ -12,7 +11,6 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({
-  isLive,
   isLoading,
   onRefresh,
   onExportCsv,
@@ -21,6 +19,27 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenCustomWorkDay,
   activeMonthLabel,
 }) => {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [menuOpen]);
+
   return (
     <header className="app-header">
       <div className="header-left">
@@ -40,33 +59,10 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
         <div className="brand-text">
           <h1>TimeTracker</h1>
-          <p className="subtitle">Windows Startup &amp; Shutdown Work Hours</p>
         </div>
       </div>
 
       <div className="header-right">
-        <div className={`status-badge ${isLive ? 'live' : 'fallback'}`}>
-          <span className="status-dot"></span>
-          <span>{isLive ? 'Local Server Connected' : 'Sample Mode'}</span>
-        </div>
-
-        <button
-          className="btn btn-accent"
-          onClick={() => onOpenUpload('events')}
-          title="Upload custom startup/shutdown log file"
-        >
-          <svg
-            className="btn-icon"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
-          </svg>
-          <span>Upload Log</span>
-        </button>
-
         <button
           className="btn btn-secondary"
           onClick={onOpenCustomWorkDay}
@@ -109,24 +105,6 @@ export const Header: React.FC<HeaderProps> = ({
 
         <button
           className="btn btn-secondary"
-          onClick={() => onOpenUpload('overrides')}
-          title="Upload user overrides and custom breaks (.exception, .log, .txt)"
-        >
-          <svg
-            className="btn-icon"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path d="M12 20h9" />
-            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-          </svg>
-          <span>Upload Overrides</span>
-        </button>
-
-        <button
-          className="btn btn-secondary"
           onClick={onRefresh}
           disabled={isLoading}
           title="Refresh Events from Windows logs"
@@ -159,6 +137,75 @@ export const Header: React.FC<HeaderProps> = ({
           </svg>
           <span>Export CSV</span>
         </button>
+
+        <div className="header-menu-wrapper" ref={menuRef}>
+          <button
+            type="button"
+            className="btn btn-secondary btn-more"
+            onClick={() => setMenuOpen((prev) => !prev)}
+            title="More options"
+            aria-label="More options"
+            aria-expanded={menuOpen}
+          >
+            <svg
+              className="btn-icon"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              stroke="none"
+            >
+              <circle cx="12" cy="5" r="2" />
+              <circle cx="12" cy="12" r="2" />
+              <circle cx="12" cy="19" r="2" />
+            </svg>
+          </button>
+
+          {menuOpen && (
+            <div className="header-dropdown-menu" role="menu">
+              <button
+                type="button"
+                className="header-dropdown-item"
+                role="menuitem"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onOpenUpload('events');
+                }}
+              >
+                <svg
+                  className="btn-icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+                </svg>
+                <span>Upload Log</span>
+              </button>
+
+              <button
+                type="button"
+                className="header-dropdown-item"
+                role="menuitem"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onOpenUpload('overrides');
+                }}
+              >
+                <svg
+                  className="btn-icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M12 20h9" />
+                  <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                </svg>
+                <span>Upload Overrides</span>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </header>
   );

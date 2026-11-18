@@ -290,7 +290,8 @@ public class EventsManager {
             if (req.breaks() != null) {
                 for (CustomBreak b : req.breaks()) {
                     if (b != null && b.start() != null && !b.start().isBlank() && b.end() != null && !b.end().isBlank()) {
-                        breaks.add(new CustomBreak(b.start().trim(), b.end().trim()));
+                        String icon = b.icon() != null && !b.icon().isBlank() ? b.icon().trim() : null;
+                        breaks.add(new CustomBreak(b.start().trim(), b.end().trim(), icon));
                     }
                 }
             }
