@@ -8,20 +8,26 @@ import { StartWorkDateModal } from './components/StartWorkDateModal';
 import { VacationModal } from './components/VacationModal';
 import { CustomWorkDayModal } from './components/CustomWorkDayModal';
 import type { UploadMode } from './components/UploadModal';
-import {
-  processEventsByMonth,
-  calculateOverallSaldo,
-  parsePipeDelimitedEvents,
-  parsePipeDelimitedOverrides,
-  expandVacationDateRange,
-  DEFAULT_LUNCH_CONFIG,
-} from './utils/eventProcessor';
-import { fallbackEventsByMonth } from './data/fallbackData';
-import type { TrackerEvent, EventsApiResponse, LunchConfig, DayOverride, CustomBreak } from './types';
+import type {
+  EventsApiResponse,
+  LunchConfig,
+  DayOverride,
+  CustomBreak,
+  MonthSummary,
+  OverallSaldoSummary,
+} from './types';
 import './index.css';
 
+const DEFAULT_LUNCH_CONFIG: LunchConfig = {
+  defaultLunchStart: '12:30',
+  defaultLunchEnd: '13:30',
+  defaultWorkHoursPerDay: 8,
+  startWorkDate: '',
+};
+
 function App() {
-  const [eventsByMonth, setEventsByMonth] = useState<Record<string, TrackerEvent[]>>({});
+  const [monthSummaries, setMonthSummaries] = useState<Record<string, MonthSummary>>({});
+  const [overallSaldo, setOverallSaldo] = useState<OverallSaldoSummary | undefined>(undefined);
   const [lunchConfig, setLunchConfig] = useState<LunchConfig>(DEFAULT_LUNCH_CONFIG);
   const [userOverrides, setUserOverrides] = useState<Record<string, DayOverride>>({});
   const [selectedMonth, setSelectedMonth] = useState<string>('');
@@ -42,6 +48,27 @@ function App() {
     }, 4500);
   };
 
+  const applyServerResponse = useCallback((data: EventsApiResponse, checkStartWorkDate = false) => {
+    if (data.lunchConfig) {
+      setLunchConfig(data.lunchConfig);
+      if (checkStartWorkDate && (!data.lunchConfig.startWorkDate || !data.lunchConfig.startWorkDate.trim())) {
+        setIsStartDateModalOpen(true);
+      }
+    } else if (checkStartWorkDate) {
+      setIsStartDateModalOpen(true);
+    }
+    if (data.userOverrides) {
+      setUserOverrides(data.userOverrides);
+    }
+    if (data.monthSummaries) {
+      setMonthSummaries(data.monthSummaries);
+    }
+    if (data.overallSaldo) {
+      setOverallSaldo(data.overallSaldo);
+    }
+    setIsLive(true);
+  }, []);
+
   const fetchEvents = useCallback(async () => {
     setIsLoading(true);
     setErrorMsg(null);
@@ -51,68 +78,37 @@ function App() {
         throw new Error(`Server returned HTTP ${response.status}`);
       }
       const data: EventsApiResponse = await response.json();
-      if (data && data.lunchConfig) {
-        setLunchConfig(data.lunchConfig);
-        if (!data.lunchConfig.startWorkDate || !data.lunchConfig.startWorkDate.trim()) {
-          setIsStartDateModalOpen(true);
-        }
-      } else {
-        setIsStartDateModalOpen(true);
-      }
-      if (data && data.userOverrides) {
-        setUserOverrides(data.userOverrides);
-      }
-      if (
-        data &&
-        ((data.eventsByMonth && Object.keys(data.eventsByMonth).length > 0) ||
-          (data.userOverrides && Object.keys(data.userOverrides).length > 0) ||
-          Boolean(data.lunchConfig?.startWorkDate?.trim()))
-      ) {
-        setEventsByMonth(data.eventsByMonth || {});
-        setIsLive(true);
-      } else {
-        setEventsByMonth(fallbackEventsByMonth);
-        setIsLive(false);
-      }
+      applyServerResponse(data, true);
     } catch {
-      const savedLocalStartDate = localStorage.getItem('time_tracker_start_work_date') || '';
-      setLunchConfig((prev) => ({ ...prev, startWorkDate: savedLocalStartDate }));
-      if (!savedLocalStartDate) {
-        setIsStartDateModalOpen(true);
-      }
-      setEventsByMonth(fallbackEventsByMonth);
       setIsLive(false);
+      setErrorMsg('Unable to connect to local TimeTracker server.');
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [applyServerResponse]);
 
   useEffect(() => {
     fetchEvents();
   }, [fetchEvents]);
 
-  const handleSaveStartWorkDate = useCallback(async (startWorkDate: string) => {
-    const cleanDate = startWorkDate.trim();
-    localStorage.setItem('time_tracker_start_work_date', cleanDate);
-    setLunchConfig((prev) => ({ ...prev, startWorkDate: cleanDate }));
-
-    try {
+  const handleSaveStartWorkDate = useCallback(
+    async (startWorkDate: string) => {
+      const cleanDate = startWorkDate.trim();
       const response = await fetch('/api/config/start-date', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ startWorkDate: cleanDate }),
       });
-      if (response.ok) {
-        const updatedConfig: LunchConfig = await response.json();
-        setLunchConfig(updatedConfig);
+      if (!response.ok) {
+        throw new Error(`Server returned HTTP ${response.status}`);
       }
-    } catch {
-      // Saved locally in state and localStorage if offline
-    }
-
-    setIsStartDateModalOpen(false);
-    showToast(`Saved Start Work Date (${cleanDate}) to config.properties`);
-  }, []);
+      const data: EventsApiResponse = await response.json();
+      applyServerResponse(data, false);
+      setIsStartDateModalOpen(false);
+      showToast(`Saved Start Work Date (${cleanDate}) to config.properties`);
+    },
+    [applyServerResponse]
+  );
 
   const handleSaveOverride = useCallback(
     async (
@@ -125,17 +121,6 @@ function App() {
       const cleanBreaks = breaks && breaks.length > 0 ? breaks : null;
       const cleanVacation = vacation === true ? true : null;
       const isEmpty = !start && !end && !cleanBreaks && !cleanVacation;
-
-      // Optimistic state update
-      setUserOverrides((prev) => {
-        const next = { ...prev };
-        if (isEmpty) {
-          delete next[date];
-        } else {
-          next[date] = { start, end, breaks: cleanBreaks, vacation: cleanVacation };
-        }
-        return next;
-      });
 
       try {
         const response = await fetch('/api/overrides', {
@@ -150,8 +135,8 @@ function App() {
           }),
         });
         if (response.ok) {
-          const updated: Record<string, DayOverride> = await response.json();
-          setUserOverrides(updated);
+          const data: EventsApiResponse = await response.json();
+          applyServerResponse(data, false);
           const monthKey = date.slice(0, 7);
           showToast(
             isEmpty
@@ -160,14 +145,10 @@ function App() {
           );
         }
       } catch {
-        showToast(
-          isEmpty
-            ? `Reset overrides for ${date} (local)`
-            : `Saved overrides for ${date} (local)`
-        );
+        setErrorMsg('Failed to save override to local server.');
       }
     },
-    []
+    [applyServerResponse]
   );
 
   const handleSaveVacation = useCallback(
@@ -177,103 +158,51 @@ function App() {
       excludeWeekends: boolean,
       vacation: boolean
     ) => {
-      const targetDates = expandVacationDateRange(
-        startDate,
-        endDate,
-        vacation ? excludeWeekends : false,
-        lunchConfig.startWorkDate || ''
-      );
-
-      // Optimistic state update
-      setUserOverrides((prev) => {
-        const next = { ...prev };
-        for (const dStr of targetDates) {
-          const existing = next[dStr];
-          if (vacation) {
-            next[dStr] = {
-              start: existing?.start ?? null,
-              end: existing?.end ?? null,
-              breaks: existing?.breaks ?? null,
-              vacation: true,
-            };
-          } else if (existing) {
-            const hasOther =
-              Boolean(existing.start) ||
-              Boolean(existing.end) ||
-              Boolean(existing.breaks && existing.breaks.length > 0);
-            if (hasOther) {
-              next[dStr] = {
-                start: existing.start ?? null,
-                end: existing.end ?? null,
-                breaks: existing.breaks ?? null,
-                vacation: null,
-              };
-            } else {
-              delete next[dStr];
-            }
-          }
-        }
-        return next;
+      const response = await fetch('/api/overrides/vacation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          startDate,
+          endDate,
+          excludeWeekends,
+          vacation,
+        }),
       });
-
-      try {
-        const response = await fetch('/api/overrides/vacation', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            startDate,
-            endDate,
-            excludeWeekends,
-            vacation,
-          }),
-        });
-        if (response.ok) {
-          const updated: Record<string, DayOverride> = await response.json();
-          setUserOverrides(updated);
-        }
-      } catch {
-        // Saved locally in state if server offline
+      if (!response.ok) {
+        throw new Error(`Server returned HTTP ${response.status}`);
       }
+      const data: EventsApiResponse = await response.json();
+      applyServerResponse(data, false);
 
-      if (targetDates.length > 0) {
-        const latestMonth = targetDates[targetDates.length - 1].slice(0, 7);
-        setSelectedMonth(latestMonth);
+      if (endDate && endDate.length >= 7) {
+        setSelectedMonth(endDate.slice(0, 7));
+      } else if (startDate && startDate.length >= 7) {
+        setSelectedMonth(startDate.slice(0, 7));
       }
 
       showToast(
         vacation
-          ? `Marked ${targetDates.length} ${targetDates.length === 1 ? 'day' : 'days'} as vacation in user overrides`
+          ? `Saved vacation (${startDate === endDate ? startDate : `${startDate} – ${endDate}`}) in user overrides`
           : `Removed vacation for ${startDate === endDate ? startDate : `${startDate} – ${endDate}`}`
       );
     },
-    [lunchConfig.startWorkDate]
+    [applyServerResponse]
   );
 
-  // Process raw events into MonthSummaries
-  const processedMonths = useMemo(() => {
-    return processEventsByMonth(eventsByMonth, lunchConfig, userOverrides);
-  }, [eventsByMonth, lunchConfig, userOverrides]);
-
   const monthList = useMemo(() => {
-    return Object.values(processedMonths);
-  }, [processedMonths]);
+    return Object.values(monthSummaries);
+  }, [monthSummaries]);
 
-  const overallSaldo = useMemo(() => {
-    return calculateOverallSaldo(monthList);
-  }, [monthList]);
-
-  // Set default active month to the latest month
   useEffect(() => {
-    if (monthList.length > 0 && (!selectedMonth || !processedMonths[selectedMonth])) {
+    if (monthList.length > 0 && (!selectedMonth || !monthSummaries[selectedMonth])) {
       setSelectedMonth(monthList[0].monthKey);
     }
-  }, [monthList, selectedMonth, processedMonths]);
+  }, [monthList, selectedMonth, monthSummaries]);
 
   const activeMonthSummary = useMemo(() => {
-    return processedMonths[selectedMonth] || (monthList.length > 0 ? monthList[0] : null);
-  }, [processedMonths, selectedMonth, monthList]);
+    return monthSummaries[selectedMonth] || (monthList.length > 0 ? monthList[0] : null);
+  }, [monthSummaries, selectedMonth, monthList]);
 
-  // Handle uploading custom pipe-delimited log file or overrides file
   const handleUploadLog = async (
     content: string,
     clearAll: boolean,
@@ -281,171 +210,43 @@ function App() {
   ) => {
     setIsLoading(true);
     setErrorMsg(null);
-
-    if (mode === 'overrides') {
-      const { overridesByDate, months: parsedMonths, lineCount } =
-        parsePipeDelimitedOverrides(content);
-
-      if (lineCount === 0 || parsedMonths.length === 0) {
-        setIsLoading(false);
-        throw new Error(
-          'No valid override lines found (expected OVERRIDE_IN|date|time, OVERRIDE_OUT|date|time, or date|start|end).'
-        );
-      }
-
-      try {
-        const response = await fetch(`/api/overrides/upload?clearAll=${clearAll}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain' },
-          body: content,
-        });
-
-        if (response.ok) {
-          const data: EventsApiResponse = await response.json();
-          if (data.lunchConfig) {
-            setLunchConfig(data.lunchConfig);
-          }
-          if (data.userOverrides) {
-            setUserOverrides(data.userOverrides);
-          }
-          if (data.eventsByMonth && Object.keys(data.eventsByMonth).length > 0) {
-            setEventsByMonth(data.eventsByMonth);
-          }
-          setIsLive(true);
-        } else {
-          setUserOverrides((prev) => {
-            if (clearAll) return overridesByDate;
-            const next = { ...prev };
-            // Replace dates in matching months
-            for (const k of Object.keys(next)) {
-              if (parsedMonths.includes(k.slice(0, 7))) {
-                delete next[k];
-              }
-            }
-            return { ...next, ...overridesByDate };
-          });
-        }
-      } catch {
-        setUserOverrides((prev) => {
-          if (clearAll) return overridesByDate;
-          const next = { ...prev };
-          for (const k of Object.keys(next)) {
-            if (parsedMonths.includes(k.slice(0, 7))) {
-              delete next[k];
-            }
-          }
-          return { ...next, ...overridesByDate };
-        });
-      } finally {
-        setIsLoading(false);
-      }
-
-      if (parsedMonths.length > 0) {
-        setSelectedMonth(parsedMonths[0]);
-      }
-
-      showToast(
-        `Successfully imported overrides for ${Object.keys(overridesByDate).length} day(s) in ${parsedMonths.join(', ')}.`
-      );
-      return;
-    }
-
-    // Client-side parse as fallback / optimistic preview for events
-    const clientParsed = parsePipeDelimitedEvents(content);
-    const parsedMonths = Object.keys(clientParsed).sort((a, b) => b.localeCompare(a));
-
-    if (parsedMonths.length === 0) {
-      setIsLoading(false);
-      throw new Error('No valid STARTUP|timestamp or SHUTDOWN|timestamp events found in file.');
-    }
-
     try {
-      const response = await fetch(`/api/events/upload?clearAll=${clearAll}`, {
+      const endpoint =
+        mode === 'overrides'
+          ? `/api/overrides/upload?clearAll=${clearAll}`
+          : `/api/events/upload?clearAll=${clearAll}`;
+
+      const response = await fetch(endpoint, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'text/plain',
-        },
+        headers: { 'Content-Type': 'text/plain' },
         body: content,
       });
 
-      if (response.ok) {
-        const data: EventsApiResponse = await response.json();
-        if (data.lunchConfig) {
-          setLunchConfig(data.lunchConfig);
-        }
-        if (data.userOverrides) {
-          setUserOverrides(data.userOverrides);
-        }
-        setEventsByMonth(data.eventsByMonth);
-        setIsLive(true);
-      } else {
-        // Fallback to client-side parsed data if server isn't running or returns error
-        setEventsByMonth((prev) => {
-          if (clearAll) {
-            return clientParsed;
-          }
-          return { ...prev, ...clientParsed };
-        });
+      if (!response.ok) {
+        throw new Error(`Server returned HTTP ${response.status}`);
       }
-    } catch {
-      // Offline fallback
-      setEventsByMonth((prev) => {
-        if (clearAll) {
-          return clientParsed;
-        }
-        return { ...prev, ...clientParsed };
-      });
+
+      const data: EventsApiResponse = await response.json();
+      applyServerResponse(data, false);
+
+      if (data.months && data.months.length > 0) {
+        setSelectedMonth(data.months[0]);
+      }
+
+      showToast(
+        mode === 'overrides'
+          ? 'Successfully imported user overrides.'
+          : 'Successfully imported events log.'
+      );
     } finally {
       setIsLoading(false);
     }
-
-    // Switch active view to the latest uploaded month
-    if (parsedMonths.length > 0) {
-      setSelectedMonth(parsedMonths[0]);
-    }
-
-    const totalUploaded = Object.values(clientParsed).reduce((acc, l) => acc + l.length, 0);
-    showToast(
-      `Successfully imported ${totalUploaded} events for ${parsedMonths.join(', ')} (existing events overwritten).`
-    );
   };
 
-  // CSV export feature
   const handleExportCsv = useCallback(() => {
     if (!activeMonthSummary) return;
-
-    const headers = [
-      'Date',
-      'Weekday',
-      'Start',
-      'Lunch Break',
-      'End',
-      'Lunch Deducted',
-      'Net Duration',
-      'Daily Saldo',
-      'Sessions',
-      'Status',
-    ];
-    const rows = activeMonthSummary.days.map((d) => [
-      d.date,
-      d.dayOfWeekFull,
-      d.startWorkTime,
-      d.lunchWindow,
-      d.endWorkTime,
-      d.lunchDeductedFormatted,
-      d.durationFormatted,
-      d.workBalanceFormatted,
-      d.allEvents.length,
-      d.status,
-    ]);
-
-    const csvContent =
-      'data:text/csv;charset=utf-8,' +
-      [headers.join(','), ...rows.map((e) => e.map((val) => `"${val}"`).join(','))].join('\n');
-
-    const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
+    link.setAttribute('href', `/api/events/${activeMonthSummary.monthKey}/csv`);
     link.setAttribute('download', `work-hours-${activeMonthSummary.monthKey}.csv`);
     document.body.appendChild(link);
     link.click();
@@ -558,8 +359,8 @@ function App() {
 
       <div
         className={`status-badge bottom-right ${isLive ? 'live' : 'fallback'}`}
-        title={isLive ? 'Local Server Connected' : 'Sample Mode (Server Disconnected)'}
-        aria-label={isLive ? 'Local Server Connected' : 'Sample Mode (Server Disconnected)'}
+        title={isLive ? 'Local Server Connected' : 'Server Disconnected'}
+        aria-label={isLive ? 'Local Server Connected' : 'Server Disconnected'}
       >
         <span className="status-dot"></span>
       </div>
@@ -568,4 +369,3 @@ function App() {
 }
 
 export default App;
-

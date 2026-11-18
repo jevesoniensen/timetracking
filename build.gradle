@@ -76,6 +76,77 @@ tasks.register('buildTimeTrackerApp', Exec) {
     configureRustEnv(it)
     environment 'TIME_TRACKER_SKIP_SERVER_BUILD', '1'
     commandLine([cargoExecutable()] + cargoArgs)
+
+    doLast {
+        def profileName = releaseBuild ? 'release' : 'debug'
+        def profileDir = file("time_tracker_app/target/${profileName}")
+        profileDir.mkdirs()
+
+        // 1. Always copy the latest Spring Boot executable jar into target/<profile>/time-tracker-server.jar
+        def libsDir = file('time-tracker-local-server/build/libs')
+        def bootJarFile = libsDir.listFiles()?.findAll {
+            it.isFile() && it.name.endsWith('.jar') && !it.name.endsWith('-plain.jar')
+        }?.max { it.lastModified() }
+
+        if (bootJarFile == null || !bootJarFile.exists()) {
+            throw new GradleException("No Spring Boot executable jar found in ${libsDir}")
+        }
+        def targetJar = new File(profileDir, 'time-tracker-server.jar')
+        java.nio.file.Files.copy(
+            bootJarFile.toPath(),
+            targetJar.toPath(),
+            java.nio.file.StandardCopyOption.REPLACE_EXISTING
+        )
+        logger.lifecycle("Copied ${bootJarFile.name} -> ${targetJar}")
+
+        // 2. Ensure default config.properties exists next to the executable
+        def srcConfig = file('time_tracker_app/config.properties')
+        def dstConfig = new File(profileDir, 'config.properties')
+        if (srcConfig.exists() && !dstConfig.exists()) {
+            java.nio.file.Files.copy(srcConfig.toPath(), dstConfig.toPath())
+        }
+
+        // 3. Ensure embedded minimal JRE exists next to the executable
+        def jreDir = new File(profileDir, 'jre')
+        def javaExeName = isWindows ? 'java.exe' : 'java'
+        def targetJavaExe = new File(new File(jreDir, 'bin'), javaExeName)
+        if (!targetJavaExe.exists()) {
+            if (jreDir.exists()) {
+                jreDir.deleteDir()
+            }
+            def jlinkExeName = isWindows ? 'jlink.exe' : 'jlink'
+            def javaHome = System.getenv('JAVA_HOME') ?: System.getProperty('java.home')
+            def jlinkFile = new File(new File(javaHome, 'bin'), jlinkExeName)
+            def jlinkCmd = jlinkFile.exists() ? jlinkFile.absolutePath : jlinkExeName
+            def modules = [
+                'java.base',
+                'java.logging',
+                'java.naming',
+                'java.desktop',
+                'java.management',
+                'java.security.jgss',
+                'java.instrument',
+                'java.sql',
+                'java.xml',
+                'java.net.http',
+                'jdk.unsupported',
+            ].join(',')
+
+            logger.lifecycle("Creating embedded minimal JRE at ${jreDir}...")
+            def proc = new ProcessBuilder(
+                jlinkCmd,
+                '--no-header-files',
+                '--no-man-pages',
+                '--strip-debug',
+                '--add-modules', modules,
+                '--output', jreDir.absolutePath
+            ).inheritIO().start()
+            int exitCode = proc.waitFor()
+            if (exitCode != 0) {
+                throw new GradleException("jlink failed with exit code ${exitCode}")
+            }
+        }
+    }
 }
 
 tasks.register('build') {
