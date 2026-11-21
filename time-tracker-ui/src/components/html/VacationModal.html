@@ -1,0 +1,183 @@
+<div *ngIf="isOpen" class="modal-backdrop" (click)="closeModal.emit()">
+  <div class="modal-card" (click)="$event.stopPropagation()" style="max-width: 520px">
+    <div class="modal-header">
+      <div class="modal-title-group">
+        <div
+          class="modal-icon-badge"
+          style="background: rgba(139, 92, 246, 0.15); color: #a78bfa; border-color: rgba(139, 92, 246, 0.35)"
+        >
+          <img [src]="sunIcon" alt="" />
+        </div>
+        <div>
+          <h3>Manage Vacation Days</h3>
+          <p class="modal-subtitle">
+            Mark a single day or a date period as vacation in user overrides
+          </p>
+        </div>
+      </div>
+      <button class="modal-close-btn" (click)="closeModal.emit()" aria-label="Close modal">
+        ✕
+      </button>
+    </div>
+
+    <form (ngSubmit)="handleSubmit()">
+      <div class="modal-body" style="display: flex; flex-direction: column; gap: 1.1rem">
+        <div style="display: flex; gap: 0.5rem">
+          <button
+            type="button"
+            class="btn btn-sm"
+            [ngClass]="mode === 'day' ? 'btn-primary' : 'btn-secondary'"
+            style="flex: 1; justify-content: center"
+            (click)="setMode('day')"
+          >
+            Single Day
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm"
+            [ngClass]="mode === 'period' ? 'btn-primary' : 'btn-secondary'"
+            style="flex: 1; justify-content: center"
+            (click)="setMode('period')"
+          >
+            Period (Date Range)
+          </button>
+        </div>
+
+        <div *ngIf="mode === 'day'; else periodInputs" style="display: flex; flex-direction: column; gap: 0.4rem">
+          <label
+            for="vacation-single-date"
+            style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em"
+          >
+            Vacation Date
+          </label>
+          <input
+            id="vacation-single-date"
+            name="singleDate"
+            type="date"
+            [min]="startWorkDate || null"
+            [(ngModel)]="startDate"
+            (ngModelChange)="onSingleDateChange($event)"
+            required
+            style="padding: 0.6rem 0.85rem; border-radius: var(--radius-md); border: 1px solid var(--border-focus); background: var(--surface-primary); color: var(--text-white); font-family: var(--font-mono); font-size: 0.92rem; color-scheme: dark"
+          />
+        </div>
+
+        <ng-template #periodInputs>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem">
+            <div style="display: flex; flex-direction: column; gap: 0.4rem">
+              <label
+                for="vacation-start-date"
+                style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em"
+              >
+                From Date
+              </label>
+              <input
+                id="vacation-start-date"
+                name="startDate"
+                type="date"
+                [min]="startWorkDate || null"
+                [(ngModel)]="startDate"
+                (ngModelChange)="onStartDateChange($event)"
+                required
+                style="padding: 0.6rem 0.85rem; border-radius: var(--radius-md); border: 1px solid var(--border-focus); background: var(--surface-primary); color: var(--text-white); font-family: var(--font-mono); font-size: 0.9rem; color-scheme: dark"
+              />
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 0.4rem">
+              <label
+                for="vacation-end-date"
+                style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em"
+              >
+                To Date
+              </label>
+              <input
+                id="vacation-end-date"
+                name="endDate"
+                type="date"
+                [min]="startDate || startWorkDate || null"
+                [(ngModel)]="endDate"
+                (ngModelChange)="onEndDateChange()"
+                required
+                style="padding: 0.6rem 0.85rem; border-radius: var(--radius-md); border: 1px solid var(--border-focus); background: var(--surface-primary); color: var(--text-white); font-family: var(--font-mono); font-size: 0.9rem; color-scheme: dark"
+              />
+            </div>
+          </div>
+        </ng-template>
+
+        <div *ngIf="mode === 'period'" class="option-row" style="margin-top: 0">
+          <label class="checkbox-label">
+            <input
+              type="checkbox"
+              name="excludeWeekends"
+              [(ngModel)]="excludeWeekends"
+              (ngModelChange)="refreshPreview()"
+            />
+            <span>Skip weekends (Saturday &amp; Sunday)</span>
+          </label>
+        </div>
+
+        <div
+          *ngIf="previewDates.length > 0"
+          class="preview-card"
+          style="background: rgba(139, 92, 246, 0.12); border-color: rgba(139, 92, 246, 0.3); color: #c4b5fd"
+        >
+          <img [src]="checkCircleIcon" alt="" class="preview-icon" />
+          <div>
+            <strong>
+              Will mark {{ previewDates.length }} {{ previewDates.length === 1 ? 'day' : 'days' }} as
+              vacation
+            </strong>
+            <p>
+              {{
+                previewDates.length <= 5
+                  ? previewDates.join(', ')
+                  : previewDates[0] + ' → ' + previewDates[previewDates.length - 1]
+              }}
+            </p>
+          </div>
+        </div>
+
+        <div
+          *ngIf="existingVacationDates.length > 0"
+          style="border-top: 1px solid var(--border-subtle); padding-top: 0.9rem; display: flex; flex-direction: column; gap: 0.5rem"
+        >
+          <span
+            style="font-size: 0.76rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted)"
+          >
+            Recorded Vacation Days ({{ existingVacationDates.length }})
+          </span>
+          <div
+            style="display: flex; flex-wrap: wrap; gap: 0.45rem; max-height: 130px; overflow-y: auto; padding-right: 0.2rem"
+          >
+            <span *ngFor="let dStr of existingVacationDates" class="vacation-chip">
+              <span class="timestamp-mono">{{ dStr }}</span>
+              <button
+                type="button"
+                class="remove-break-btn"
+                (click)="handleRemoveSingleVacation(dStr)"
+                [disabled]="isSaving"
+                [title]="'Remove vacation on ' + dStr"
+              >
+                ✕
+              </button>
+            </span>
+          </div>
+        </div>
+
+        <div *ngIf="error" class="modal-error">{{ error }}</div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" (click)="closeModal.emit()" [disabled]="isSaving">
+          Cancel
+        </button>
+        <button
+          type="submit"
+          class="btn btn-primary"
+          [disabled]="isSaving || previewDates.length === 0"
+        >
+          {{ isSaving ? 'Saving...' : 'Save Vacation' }}
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

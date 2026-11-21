@@ -1,0 +1,84 @@
+<header class="app-header">
+  <div class="header-left">
+    <div class="brand-logo">
+      <img [src]="clockIcon" alt="" class="brand-icon" />
+    </div>
+    <div class="brand-text">
+      <h1>TimeTracker</h1>
+    </div>
+  </div>
+
+  <div class="header-right">
+    <button
+      class="btn btn-secondary"
+      (click)="openCustomWorkDay.emit()"
+      title="Add a custom day of work from scratch"
+    >
+      <img [src]="calendarPlusIcon" alt="" class="btn-icon" />
+      <span>Add Work Day</span>
+    </button>
+
+    <button
+      class="btn btn-secondary"
+      (click)="openVacation.emit()"
+      title="Enter vacation by single day or period"
+    >
+      <img [src]="sunIcon" alt="" class="btn-icon" />
+      <span>Vacation</span>
+    </button>
+
+    <button
+      class="btn btn-secondary"
+      (click)="refresh.emit()"
+      [disabled]="isLoading"
+      title="Refresh Events from Windows logs"
+    >
+      <img [src]="refreshIcon" alt="" class="btn-icon" [class.spinning]="isLoading" />
+      <span>{{ isLoading ? 'Syncing...' : 'Refresh' }}</span>
+    </button>
+
+    <button
+      class="btn btn-primary"
+      (click)="exportCsv.emit()"
+      [title]="'Export ' + activeMonthLabel + ' as CSV'"
+    >
+      <img [src]="downloadIcon" alt="" class="btn-icon" />
+      <span>Export CSV</span>
+    </button>
+
+    <div class="header-menu-wrapper">
+      <button
+        type="button"
+        class="btn btn-secondary btn-more"
+        (click)="toggleMenu()"
+        title="More options"
+        aria-label="More options"
+        [attr.aria-expanded]="menuOpen"
+      >
+        <img [src]="moreVerticalIcon" alt="" class="btn-icon" />
+      </button>
+
+      <div *ngIf="menuOpen" class="header-dropdown-menu" role="menu">
+        <button
+          type="button"
+          class="header-dropdown-item"
+          role="menuitem"
+          (click)="selectUpload('events')"
+        >
+          <img [src]="uploadIcon" alt="" class="btn-icon" />
+          <span>Upload Log</span>
+        </button>
+
+        <button
+          type="button"
+          class="header-dropdown-item"
+          role="menuitem"
+          (click)="selectUpload('overrides')"
+        >
+          <img [src]="editIcon" alt="" class="btn-icon" />
+          <span>Upload Overrides</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</header>
