@@ -1,5 +1,7 @@
 import { Component, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { MatCardModule } from '@angular/material/card';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import type { MonthSummary, LunchConfig, OverallSaldoSummary } from '../../types';
 import clockIcon from '../../assets/icons/clock.svg';
 import activityIcon from '../../assets/icons/activity.svg';
@@ -12,7 +14,7 @@ import template from '../html/MetricsCards.html?raw';
 @Component({
   selector: 'app-metrics-cards',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, MatCardModule, MatTooltipModule],
   template,
 })
 export class MetricsCardsComponent {

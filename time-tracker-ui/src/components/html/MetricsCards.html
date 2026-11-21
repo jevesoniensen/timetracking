@@ -1,5 +1,5 @@
 <div *ngIf="summary" class="metrics-grid">
-  <div class="metric-card">
+  <mat-card class="metric-card">
     <div class="metric-icon-box cyan">
       <img [src]="clockIcon" alt="" />
     </div>
@@ -9,9 +9,9 @@
         {{ summary.totalWorkFormatted }}
         <span
           class="metric-unit"
-          [style.color]="isPositiveBalance ? '#34d399' : '#f87171'"
+          [style.color]="isPositiveBalance ? 'var(--accent-emerald-text)' : 'var(--accent-rose-text)'"
           style="font-weight: 700"
-          title="Month Saldo vs. Month Work Expectation (excluding today)"
+          matTooltip="Month Saldo vs. Month Work Expectation (excluding today)"
         >
           ({{ summary.workBalanceFormatted }})
         </span>
@@ -20,9 +20,9 @@
         Across {{ summary.activeDaysCount }} active days in {{ summary.monthLabel }} (excl. today)
       </span>
     </div>
-  </div>
+  </mat-card>
 
-  <div *ngIf="overallSaldo" class="metric-card">
+  <mat-card *ngIf="overallSaldo" class="metric-card">
     <div class="metric-icon-box" [ngClass]="isOverallPositive ? 'emerald' : 'amber'">
       <img [src]="activityIcon" alt="" />
     </div>
@@ -30,7 +30,7 @@
       <span class="metric-label">General Saldo (All Months)</span>
       <div
         class="metric-value"
-        [style.color]="isOverallPositive ? '#34d399' : '#f87171'"
+        [style.color]="isOverallPositive ? 'var(--accent-emerald-text)' : 'var(--accent-rose-text)'"
       >
         {{ overallSaldo.workBalanceFormatted }}
       </div>
@@ -38,9 +38,9 @@
         {{ overallSaldo.totalWorkFormatted }} worked / {{ overallSaldo.expectedWorkFormatted }} expected ({{ overallSaldo.monthsCount }} {{ overallSaldo.monthsCount === 1 ? 'month' : 'months' }})
       </span>
     </div>
-  </div>
+  </mat-card>
 
-  <div class="metric-card">
+  <mat-card class="metric-card">
     <div class="metric-icon-box amber">
       <img [src]="clockTargetIcon" alt="" />
     </div>
@@ -51,9 +51,9 @@
         {{ summary.expectedWorkDaysCount }} workdays × {{ hoursPerDay }}h/day{{ summary.vacationDaysCount > 0 ? ' (' + summary.vacationDaysCount + ' vacation)' : '' }} (excl. today)
       </span>
     </div>
-  </div>
+  </mat-card>
 
-  <div class="metric-card">
+  <mat-card class="metric-card">
     <div class="metric-icon-box emerald">
       <img [src]="calendarIcon" alt="" />
     </div>
@@ -71,9 +71,9 @@
         }}
       </span>
     </div>
-  </div>
+  </mat-card>
 
-  <div class="metric-card">
+  <mat-card class="metric-card">
     <div class="metric-icon-box green">
       <img [src]="startDoorIcon" alt="" />
     </div>
@@ -82,9 +82,9 @@
       <div class="metric-value">{{ summary.avgStartWork }}</div>
       <span class="metric-hint">First startup (excl. today)</span>
     </div>
-  </div>
+  </mat-card>
 
-  <div class="metric-card">
+  <mat-card class="metric-card">
     <div class="metric-icon-box indigo">
       <img [src]="endDoorIcon" alt="" />
     </div>
@@ -93,5 +93,5 @@
       <div class="metric-value">{{ summary.avgEndWork }}</div>
       <span class="metric-hint">Last shutdown (excl. today)</span>
     </div>
-  </div>
+  </mat-card>
 </div>

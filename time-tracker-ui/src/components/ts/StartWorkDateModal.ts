@@ -1,6 +1,7 @@
-import { Component, Input, Output, EventEmitter, OnChanges } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnChanges, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { MatButtonModule } from '@angular/material/button';
 import calendarIcon from '../../assets/icons/calendar.svg';
 import template from '../html/StartWorkDateModal.html?raw';
 
@@ -9,10 +10,12 @@ const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 @Component({
   selector: 'app-start-work-date-modal',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, MatButtonModule],
   template,
 })
 export class StartWorkDateModalComponent implements OnChanges {
+  private readonly cdr = inject(ChangeDetectorRef);
+
   @Input() isOpen = false;
   @Input() defaultSuggestedDate?: string;
   @Input() onSave?: (startWorkDate: string) => Promise<void>;
@@ -56,6 +59,7 @@ export class StartWorkDateModalComponent implements OnChanges {
       this.error = err instanceof Error ? err.message : 'Failed to save start work date.';
     } finally {
       this.isSaving = false;
+      this.cdr.detectChanges();
     }
   }
 }

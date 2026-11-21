@@ -67,11 +67,36 @@ fn current_timestamp() -> String {
     }
 }
 
+const MAX_LOG_FILE_SIZE: u64 = 10 * 1024 * 1024; // 10 MB
+const MAX_LOG_FILES: usize = 5;
+
+fn rotate_log_if_needed(logs_dir: &std::path::Path, base_name: &str) {
+    let active_log = logs_dir.join(base_name);
+    let size = std::fs::metadata(&active_log).map(|m| m.len()).unwrap_or(0);
+    if size < MAX_LOG_FILE_SIZE {
+        return;
+    }
+
+    // With max 5 files total (active + 4 backups, or 5 rotated files):
+    for i in (1..MAX_LOG_FILES).rev() {
+        let src = if i == 1 {
+            active_log.clone()
+        } else {
+            logs_dir.join(format!("{}.{}", base_name, i - 1))
+        };
+        let dst = logs_dir.join(format!("{}.{}", base_name, i));
+        if src.exists() {
+            let _ = std::fs::rename(&src, &dst);
+        }
+    }
+}
+
 fn log_to_app_log(app_dir: &std::path::Path, message: &str) {
     let logs_dir = app_dir.join("logs");
     if !logs_dir.exists() {
         let _ = std::fs::create_dir_all(&logs_dir);
     }
+    rotate_log_if_needed(&logs_dir, "app.log");
     let log_path = logs_dir.join("app.log");
     let line = format!("[{}] {}\n", current_timestamp(), message);
     if let Ok(mut file) = std::fs::OpenOptions::new()
@@ -197,9 +222,19 @@ fn spawn_server(port: u16) -> Result<Child, String> {
     let mut cmd = Command::new(&java);
     if let Some(parent) = jar.parent() {
         cmd.current_dir(parent);
+        let jsa = parent.join("time-tracker-server.jsa");
+        if jsa.exists() {
+            println!("Using CDS archive: {:?}", jsa);
+            cmd.arg("-Xshare:auto")
+                .arg("-XX:SharedArchiveFile=time-tracker-server.jsa");
+        }
     }
+    let jar_arg = jar
+        .file_name()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| jar.clone());
     cmd.arg("-jar")
-        .arg(&jar)
+        .arg(&jar_arg)
         .arg(format!("--server.port={}", port))
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -290,19 +325,6 @@ fn main() {
 
     ensure_default_config(&app_dir);
 
-    #[cfg(target_os = "windows")]
-    {
-        if let Err(e) = time_tracker_event_reader::sync_windows_events_to(&app_dir) {
-            eprintln!("Failed to sync Windows events: {}", e);
-        }
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        // This gracefully calls the non-windows fallback from the library
-        let _ = time_tracker_event_reader::sync_windows_events_to(&app_dir);
-    }
-
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
 
@@ -321,6 +343,23 @@ fn main() {
     let mut window = Some(window);
 
     let server: Arc<Mutex<Option<Child>>> = Arc::new(Mutex::new(None));
+
+    // Sync Windows events and start the server off the UI thread so the window opens immediately.
+    {
+        let app_dir_for_sync = app_dir.clone();
+        thread::spawn(move || {
+            #[cfg(target_os = "windows")]
+            {
+                if let Err(e) = time_tracker_event_reader::sync_windows_events_to(&app_dir_for_sync) {
+                    eprintln!("Failed to sync Windows events: {}", e);
+                }
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                let _ = time_tracker_event_reader::sync_windows_events_to(&app_dir_for_sync);
+            }
+        });
+    }
 
     // Start the server on a free high port and wait for it off the UI thread so the spinner keeps animating.
     {
@@ -388,8 +427,10 @@ fn main() {
                 ..
             } => {
                 println!("Window close triggered. Stopping server and exiting...");
+                stop_server(&server_exit, Some(&app_dir_exit));
                 drop(webview.take());
                 drop(window.take());
+                *control_flow = ControlFlow::Exit;
             }
             Event::WindowEvent {
                 event: WindowEvent::Destroyed,
@@ -400,6 +441,7 @@ fn main() {
             }
             Event::LoopDestroyed => {
                 stop_server(&server_exit, Some(&app_dir_exit));
+                std::process::exit(0);
             }
             _ => {}
         }

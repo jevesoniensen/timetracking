@@ -1,6 +1,7 @@
-import { Component, Input, Output, EventEmitter, OnChanges, SimpleChanges } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnChanges, SimpleChanges, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { MatButtonModule } from '@angular/material/button';
 import type { CustomBreak, DayOverride, BreakIconType } from '../../types';
 import { BreakIconPickerComponent } from './BreakIcon';
 import calendarPlusIcon from '../../assets/icons/calendar-plus.svg';
@@ -19,10 +20,12 @@ const normalize24hTime = (t: string): string => t.trim().slice(0, 5);
 @Component({
   selector: 'app-custom-work-day-modal',
   standalone: true,
-  imports: [CommonModule, FormsModule, BreakIconPickerComponent],
+  imports: [CommonModule, FormsModule, MatButtonModule, BreakIconPickerComponent],
   template,
 })
 export class CustomWorkDayModalComponent implements OnChanges {
+  private readonly cdr = inject(ChangeDetectorRef);
+
   @Input() isOpen = false;
   @Input() startWorkDate = '';
   @Input() userOverrides: Record<string, DayOverride> = {};
@@ -146,6 +149,7 @@ export class CustomWorkDayModalComponent implements OnChanges {
       this.error = err instanceof Error ? err.message : 'Failed to save custom work day.';
     } finally {
       this.isSaving = false;
+      this.cdr.detectChanges();
     }
   }
 }

@@ -1,7 +1,5 @@
 package com.timetracker.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.timetracker.dto.CustomBreak;
 import com.timetracker.dto.DayOverride;
 import com.timetracker.dto.EventsResponse;
@@ -20,20 +18,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.*;
-import java.util.concurrent.TimeUnit;
 
 @Service
 public class EventsManager {
 
     private static final Logger log = LoggerFactory.getLogger(EventsManager.class);
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final FileSytemService fileSytemService;
     private final EventsRepository eventsRepository;
@@ -56,184 +49,10 @@ public class EventsManager {
     }
 
     // ---------------------------------------------------------
-    // Windows Events Synchronization
-    // ---------------------------------------------------------
-
-    public synchronized void syncWindowsEventsIfOnWindows() {
-        if (!System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win")) {
-            return;
-        }
-
-        try {
-            String lastTimestamp = eventsRepository.readSyncState().orElse(null);
-
-            LunchConfig lunchConfig = configManager.loadLunchConfig();
-            String startWorkDate = lunchConfig.startWorkDate() != null ? lunchConfig.startWorkDate().trim() : "";
-            boolean hasStartDate = startWorkDate.matches("^\\d{4}-\\d{2}-\\d{2}$");
-
-            String effectiveStartTime = null;
-            if (lastTimestamp != null && !lastTimestamp.isBlank()) {
-                if (hasStartDate) {
-                    String startTs = startWorkDate + " 00:00:00";
-                    effectiveStartTime = startTs.compareTo(lastTimestamp) > 0 ? startTs : lastTimestamp;
-                } else {
-                    effectiveStartTime = lastTimestamp;
-                }
-            } else if (hasStartDate) {
-                effectiveStartTime = startWorkDate + " 00:00:00";
-            }
-
-            // Ensure we scan at least from the beginning of the current month
-            // so any missing events from earlier this month are properly backfilled
-            String currentMonthStart = LocalDate.now().withDayOfMonth(1) + " 00:00:00";
-            if (hasStartDate && currentMonthStart.compareTo(startWorkDate + " 00:00:00") < 0) {
-                currentMonthStart = startWorkDate + " 00:00:00";
-            }
-            if (effectiveStartTime == null || effectiveStartTime.compareTo(currentMonthStart) > 0) {
-                effectiveStartTime = currentMonthStart;
-            }
-
-            String startFilter = "";
-            if (effectiveStartTime != null && !effectiveStartTime.isBlank()) {
-                startFilter = "$startTime = [datetime]::ParseExact('" + effectiveStartTime + "', 'yyyy-MM-dd HH:mm:ss', [System.Globalization.CultureInfo]::InvariantCulture); $filter['StartTime'] = $startTime;";
-            }
-
-            String script = "$filter = @{LogName='System'; Id=6005,6006,6008,1074,42,107,7001,7002,1}; "
-                    + startFilter
-                    + " Get-WinEvent -FilterHashtable $filter -ErrorAction SilentlyContinue |"
-                    + " Sort-Object TimeCreated |"
-                    + " ForEach-Object { [PSCustomObject]@{ Id = $_.Id; Provider = $_.ProviderName; TimeCreated = $_.TimeCreated.ToString('yyyy-MM-dd HH:mm:ss') } } |"
-                    + " ConvertTo-Json -Compress";
-
-            ProcessBuilder pb = new ProcessBuilder("powershell", "-NoProfile", "-Command", script);
-            Process process = pb.start();
-
-            StringBuilder sb = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    sb.append(line);
-                }
-            }
-
-            boolean finished = process.waitFor(15, TimeUnit.SECONDS);
-            if (!finished) {
-                process.destroyForcibly();
-                log.warn("PowerShell event query timed out after 15s");
-                return;
-            }
-
-            String output = sb.toString().trim();
-            if (output.isEmpty()) {
-                return;
-            }
-
-            JsonNode rootNode = objectMapper.readTree(output);
-            List<JsonNode> nodeList = new ArrayList<>();
-            if (rootNode.isArray()) {
-                for (JsonNode item : rootNode) {
-                    nodeList.add(item);
-                }
-            } else if (rootNode.isObject()) {
-                nodeList.add(rootNode);
-            }
-
-            List<TrackerEvent> newEvents = new ArrayList<>();
-            String latestTimestamp = lastTimestamp;
-
-            for (JsonNode item : nodeList) {
-                if (!item.has("Id") || !item.has("TimeCreated")) {
-                    continue;
-                }
-                int id = item.get("Id").asInt();
-                String provider = item.has("Provider") ? item.get("Provider").asText("") : "";
-                String timeCreated = item.get("TimeCreated").asText();
-                if (timeCreated == null || timeCreated.length() < 10) {
-                    continue;
-                }
-
-                if (hasStartDate && timeCreated.substring(0, 10).compareTo(startWorkDate) < 0) {
-                    continue;
-                }
-
-                String eventName;
-                String eventType;
-
-                if (id == 7001) {
-                    eventName = "LOGON";
-                    eventType = "START";
-                } else if (id == 107) {
-                    eventName = "RESUME";
-                    eventType = "START";
-                } else if (id == 6005) {
-                    eventName = "STARTUP";
-                    eventType = "START";
-                } else if (id == 1 && provider.contains("Power-Troubleshooter")) {
-                    eventName = "WAKE";
-                    eventType = "START";
-                } else if (id == 7002) {
-                    eventName = "LOGOFF";
-                    eventType = "END";
-                } else if (id == 42) {
-                    eventName = "SLEEP";
-                    eventType = "END";
-                } else if (id == 1074) {
-                    eventName = "USER_SHUTDOWN";
-                    eventType = "END";
-                } else if (id == 6006) {
-                    eventName = "SHUTDOWN";
-                    eventType = "END";
-                } else if (id == 6008) {
-                    eventName = "UNEXPECTED_SHUTDOWN";
-                    eventType = "END";
-                } else {
-                    continue;
-                }
-
-                newEvents.add(new TrackerEvent(eventName, timeCreated, eventType));
-                if (latestTimestamp == null || timeCreated.compareTo(latestTimestamp) > 0) {
-                    latestTimestamp = timeCreated;
-                }
-            }
-
-            if (!newEvents.isEmpty()) {
-                Map<String, List<TrackerEvent>> byMonth = new HashMap<>();
-                for (TrackerEvent ev : newEvents) {
-                    String monthKey = ev.timestamp().substring(0, 7);
-                    byMonth.computeIfAbsent(monthKey, k -> new ArrayList<>()).add(ev);
-                }
-
-                for (Map.Entry<String, List<TrackerEvent>> entry : byMonth.entrySet()) {
-                    String monthKey = entry.getKey();
-                    List<TrackerEvent> monthEvents = new ArrayList<>(eventsRepository.readEventsForMonth(monthKey));
-
-                    for (TrackerEvent ev : entry.getValue()) {
-                        boolean exists = monthEvents.stream().anyMatch(e ->
-                                Objects.equals(e.timestamp(), ev.timestamp()) && Objects.equals(e.name(), ev.name()));
-                        if (!exists) {
-                            monthEvents.add(ev);
-                        }
-                    }
-                    eventsRepository.writeEventsForMonth(monthKey, monthEvents);
-                }
-
-                if (latestTimestamp != null) {
-                    eventsRepository.writeSyncState(latestTimestamp);
-                }
-                log.info("Synced {} new Windows events", newEvents.size());
-            }
-        } catch (Exception e) {
-            log.warn("Failed to sync Windows events: {}", e.getMessage());
-        }
-    }
-
-    // ---------------------------------------------------------
     // Query Events
     // ---------------------------------------------------------
 
     public EventsResponse getAllEvents() {
-        syncWindowsEventsIfOnWindows();
-
         LunchConfig lunchConfig = configManager.loadLunchConfig();
         String startWorkDate = lunchConfig.startWorkDate() != null ? lunchConfig.startWorkDate().trim() : "";
         boolean hasStartDate = startWorkDate.matches("^\\d{4}-\\d{2}-\\d{2}$");

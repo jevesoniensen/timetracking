@@ -58,6 +58,7 @@ jobs:
 
           Copy-Item "time_tracker_app/target/release/time_tracker_app.exe" -Destination $bundleDir
           Copy-Item "time_tracker_app/target/release/time-tracker-server.jar" -Destination $bundleDir
+          Copy-Item "time_tracker_app/target/release/time-tracker-server.jsa" -Destination $bundleDir
           Copy-Item "time_tracker_app/target/release/jre" -Destination "$bundleDir/jre" -Recurse
           Copy-Item "time-tracker-local-server/src/main/resources/config.properties" -Destination $bundleDir
 

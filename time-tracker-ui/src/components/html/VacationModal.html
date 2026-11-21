@@ -22,26 +22,19 @@
 
     <form (ngSubmit)="handleSubmit()">
       <div class="modal-body" style="display: flex; flex-direction: column; gap: 1.1rem">
-        <div style="display: flex; gap: 0.5rem">
-          <button
-            type="button"
-            class="btn btn-sm"
-            [ngClass]="mode === 'day' ? 'btn-primary' : 'btn-secondary'"
-            style="flex: 1; justify-content: center"
-            (click)="setMode('day')"
-          >
+        <mat-button-toggle-group
+          [value]="mode"
+          (change)="setMode($event.value)"
+          aria-label="Vacation mode"
+          style="display: flex; width: 100%"
+        >
+          <mat-button-toggle value="day" style="flex: 1">
             Single Day
-          </button>
-          <button
-            type="button"
-            class="btn btn-sm"
-            [ngClass]="mode === 'period' ? 'btn-primary' : 'btn-secondary'"
-            style="flex: 1; justify-content: center"
-            (click)="setMode('period')"
-          >
+          </mat-button-toggle>
+          <mat-button-toggle value="period" style="flex: 1">
             Period (Date Range)
-          </button>
-        </div>
+          </mat-button-toggle>
+        </mat-button-toggle-group>
 
         <div *ngIf="mode === 'day'; else periodInputs" style="display: flex; flex-direction: column; gap: 0.4rem">
           <label
@@ -104,15 +97,13 @@
         </ng-template>
 
         <div *ngIf="mode === 'period'" class="option-row" style="margin-top: 0">
-          <label class="checkbox-label">
-            <input
-              type="checkbox"
-              name="excludeWeekends"
-              [(ngModel)]="excludeWeekends"
-              (ngModelChange)="refreshPreview()"
-            />
-            <span>Skip weekends (Saturday &amp; Sunday)</span>
-          </label>
+          <mat-checkbox
+            name="excludeWeekends"
+            [(ngModel)]="excludeWeekends"
+            (ngModelChange)="refreshPreview()"
+          >
+            Skip weekends (Saturday &amp; Sunday)
+          </mat-checkbox>
         </div>
 
         <div
@@ -167,10 +158,11 @@
       </div>
 
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" (click)="closeModal.emit()" [disabled]="isSaving">
+        <button mat-stroked-button type="button" class="btn btn-secondary" (click)="closeModal.emit()" [disabled]="isSaving">
           Cancel
         </button>
         <button
+          mat-flat-button
           type="submit"
           class="btn btn-primary"
           [disabled]="isSaving || previewDates.length === 0"

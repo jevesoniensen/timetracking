@@ -11,6 +11,42 @@ use std::process::Command;
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+#[cfg(target_os = "windows")]
+#[repr(C)]
+struct WinSystemTime {
+    w_year: u16,
+    w_month: u16,
+    w_day_of_week: u16,
+    w_day: u16,
+    w_hour: u16,
+    w_minute: u16,
+    w_second: u16,
+    w_milliseconds: u16,
+}
+
+#[cfg(target_os = "windows")]
+extern "system" {
+    fn GetLocalTime(lp_system_time: *mut WinSystemTime);
+}
+
+#[cfg(target_os = "windows")]
+fn current_month_start_timestamp() -> String {
+    unsafe {
+        let mut st = WinSystemTime {
+            w_year: 0,
+            w_month: 0,
+            w_day_of_week: 0,
+            w_day: 0,
+            w_hour: 0,
+            w_minute: 0,
+            w_second: 0,
+            w_milliseconds: 0,
+        };
+        GetLocalTime(&mut st);
+        format!("{:04}-{:02}-01 00:00:00", st.w_year, st.w_month)
+    }
+}
+
 pub mod config;
 pub use config::Config;
 
@@ -72,27 +108,46 @@ pub fn sync_windows_events_with_config(config: impl Into<Config>) -> io::Result<
     } else {
         SyncState { last_timestamp: None }
     };
+    state.last_timestamp = state
+        .last_timestamp
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from);
 
     let start_work_date = config.effective_start_work_date();
 
-    // Build the PowerShell command
+    // Ensure we scan at least from the beginning of the current month (or the month of last_timestamp)
+    // so any missing events from earlier this month are properly backfilled.
+    let current_month_start = current_month_start_timestamp();
     let effective_start_time: Option<String> = match (&state.last_timestamp, &start_work_date) {
         (Some(last_ts), Some(start_date)) => {
             let start_ts = format!("{} 00:00:00", start_date);
-            let month_start = if last_ts.len() >= 7 {
+            let last_month_start = if last_ts.len() >= 7 {
                 format!("{}-01 00:00:00", &last_ts[..7])
             } else {
                 last_ts.clone()
+            };
+            let month_start = if last_month_start < current_month_start {
+                last_month_start
+            } else {
+                current_month_start
             };
             let candidate = if start_ts > month_start { start_ts } else { month_start };
             Some(candidate)
         }
         (Some(last_ts), None) => {
-            if last_ts.len() >= 7 {
-                Some(format!("{}-01 00:00:00", &last_ts[..7]))
+            let last_month_start = if last_ts.len() >= 7 {
+                format!("{}-01 00:00:00", &last_ts[..7])
             } else {
-                Some(last_ts.clone())
-            }
+                last_ts.clone()
+            };
+            let month_start = if last_month_start < current_month_start {
+                last_month_start
+            } else {
+                current_month_start
+            };
+            Some(month_start)
         }
         (None, Some(start_date)) => Some(format!("{} 00:00:00", start_date)),
         (None, None) => None,
@@ -166,6 +221,11 @@ pub fn sync_windows_events_with_config(config: impl Into<Config>) -> io::Result<
     let mut latest_timestamp = state.last_timestamp.clone();
 
     for ev in ps_events {
+        let time_created = ev.TimeCreated.trim();
+        if time_created.len() < 10 {
+            continue;
+        }
+
         let provider = ev.Provider.as_deref().unwrap_or("");
         let (event_name, event_type) = match ev.Id {
             7001 => ("LOGON".to_string(), "START".to_string()),
@@ -182,14 +242,16 @@ pub fn sync_windows_events_with_config(config: impl Into<Config>) -> io::Result<
 
         // Ignore any events before the configured start work date
         if let Some(ref start_date) = start_work_date {
-            if ev.TimeCreated.len() >= 10 && &ev.TimeCreated[..10] < start_date.as_str() {
+            if &time_created[..10] < start_date.as_str() {
                 continue;
             }
         }
-        
-        let new_ev = Event::with_type(event_name, ev.TimeCreated.clone(), event_type);
 
-        latest_timestamp = Some(ev.TimeCreated);
+        let new_ev = Event::with_type(event_name, time_created.to_string(), event_type);
+
+        if latest_timestamp.as_deref().map_or(true, |cur| time_created > cur) {
+            latest_timestamp = Some(time_created.to_string());
+        }
         new_events.push(new_ev);
     }
 

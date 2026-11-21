@@ -3,7 +3,7 @@
     <app-header
       [isLoading]="isLoading"
       [activeMonthLabel]="activeMonthSummary?.monthLabel || 'Current Month'"
-      (refresh)="fetchEvents()"
+      (refresh)="fetchEvents(true)"
       (exportCsv)="handleExportCsv()"
       (openUpload)="openUploadModal($event)"
       (openVacation)="isVacationModalOpen = true"
@@ -49,7 +49,7 @@
 
     <ng-template #loadingState>
       <div class="empty-container">
-        <div class="loading-spinner"></div>
+        <mat-spinner diameter="42"></mat-spinner>
         <p>Loading work tracking events...</p>
       </div>
     </ng-template>
@@ -88,7 +88,7 @@
   <div
     class="status-badge bottom-right"
     [ngClass]="isLive ? 'live' : 'fallback'"
-    [title]="isLive ? 'Local Server Connected' : 'Server Disconnected'"
+    [matTooltip]="isLive ? 'Local Server Connected' : 'Server Disconnected'"
     [attr.aria-label]="isLive ? 'Local Server Connected' : 'Server Disconnected'"
   >
     <span class="status-dot"></span>
