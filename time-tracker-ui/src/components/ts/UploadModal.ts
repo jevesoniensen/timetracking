@@ -7,9 +7,14 @@ import {
   SimpleChanges,
   ViewChild,
   ElementRef,
+  ChangeDetectorRef,
+  inject,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { MatButtonModule } from '@angular/material/button';
+import { MatButtonToggleModule } from '@angular/material/button-toggle';
+import { MatCheckboxModule } from '@angular/material/checkbox';
 import type { UploadPreviewResponse } from '../../types';
 import uploadIcon from '../../assets/icons/upload.svg';
 import cloudUploadIcon from '../../assets/icons/cloud-upload.svg';
@@ -21,10 +26,18 @@ export type UploadMode = 'events' | 'overrides';
 @Component({
   selector: 'app-upload-modal',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [
+    CommonModule,
+    FormsModule,
+    MatButtonModule,
+    MatButtonToggleModule,
+    MatCheckboxModule,
+  ],
   template,
 })
 export class UploadModalComponent implements OnChanges {
+  private readonly cdr = inject(ChangeDetectorRef);
+
   @Input() isOpen = false;
   @Input() initialMode: UploadMode = 'events';
   @Input() isLoading = false;
@@ -97,11 +110,13 @@ SHUTDOWN|2026-07-08 18:55:02`;
       const text = e.target?.result as string;
       if (text) {
         this.fileContent = text;
+        this.cdr.detectChanges();
         this.refreshPreview();
       }
     };
     reader.onerror = () => {
       this.error = 'Failed to read file. Please try again.';
+      this.cdr.detectChanges();
     };
     reader.readAsText(file);
   }
@@ -109,6 +124,7 @@ SHUTDOWN|2026-07-08 18:55:02`;
   refreshPreview(): void {
     if (!this.fileContent.trim()) {
       this.parsedPreview = null;
+      this.cdr.detectChanges();
       return;
     }
     fetch(`/api/upload/preview?mode=${this.mode}`, {
@@ -123,9 +139,11 @@ SHUTDOWN|2026-07-08 18:55:02`;
         if (data.kind && data.kind !== this.mode && data.totalCount > 0) {
           this.mode = data.kind;
         }
+        this.cdr.detectChanges();
       })
       .catch(() => {
         this.parsedPreview = null;
+        this.cdr.detectChanges();
       });
   }
 
@@ -150,8 +168,10 @@ SHUTDOWN|2026-07-08 18:55:02`;
       this.fileContent = '';
       this.fileName = '';
       this.parsedPreview = null;
+      this.cdr.detectChanges();
     } catch (err: unknown) {
       this.error = err instanceof Error ? err.message : 'Upload failed';
+      this.cdr.detectChanges();
     }
   }
 }

@@ -8,8 +8,12 @@ import {
   AfterViewInit,
   OnChanges,
   HostListener,
+  ChangeDetectorRef,
+  inject,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { MatRippleModule } from '@angular/material/core';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import type { MonthSummary, OverallSaldoSummary } from '../../types';
 import chevronLeftIcon from '../../assets/icons/chevron-left.svg';
 import chevronRightIcon from '../../assets/icons/chevron-right.svg';
@@ -18,10 +22,12 @@ import template from '../html/MonthSelector.html?raw';
 @Component({
   selector: 'app-month-selector',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, MatRippleModule, MatTooltipModule],
   template,
 })
 export class MonthSelectorComponent implements AfterViewInit, OnChanges {
+  private readonly cdr = inject(ChangeDetectorRef);
+
   @Input() months: MonthSummary[] = [];
   @Input() activeMonth = '';
   @Input() overallSaldo?: OverallSaldoSummary;
@@ -52,6 +58,7 @@ export class MonthSelectorComponent implements AfterViewInit, OnChanges {
     if (!el) return;
     this.canScrollLeft = el.scrollLeft > 4;
     this.canScrollRight = el.scrollLeft + el.clientWidth < el.scrollWidth - 4;
+    this.cdr.detectChanges();
   }
 
   scrollTimeline(direction: 'left' | 'right'): void {

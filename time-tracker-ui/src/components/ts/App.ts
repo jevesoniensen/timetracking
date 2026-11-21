@@ -1,5 +1,7 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { HeaderComponent } from './Header';
 import { MonthSelectorComponent } from './MonthSelector';
 import { MetricsCardsComponent } from './MetricsCards';
@@ -31,6 +33,8 @@ const DEFAULT_LUNCH_CONFIG: LunchConfig = {
   standalone: true,
   imports: [
     CommonModule,
+    MatProgressSpinnerModule,
+    MatTooltipModule,
     HeaderComponent,
     MonthSelectorComponent,
     MetricsCardsComponent,
@@ -43,6 +47,8 @@ const DEFAULT_LUNCH_CONFIG: LunchConfig = {
   template,
 })
 export class AppComponent implements OnInit {
+  private readonly cdr = inject(ChangeDetectorRef);
+
   monthSummaries: Record<string, MonthSummary> = {};
   overallSaldo?: OverallSaldoSummary;
   lunchConfig: LunchConfig = DEFAULT_LUNCH_CONFIG;
@@ -93,8 +99,21 @@ export class AppComponent implements OnInit {
     );
   }
 
-  ngOnInit(): void {
-    this.fetchEvents();
+  async ngOnInit(): Promise<void> {
+    await this.fetchEvents(false);
+    void this.syncEventsQuietly();
+  }
+
+  private async syncEventsQuietly(): Promise<void> {
+    try {
+      const response = await fetch('/api/events?sync=true');
+      if (response.ok) {
+        const data: EventsApiResponse = await response.json();
+        this.applyServerResponse(data, false);
+      }
+    } catch {
+      // Ignore background sync errors if initial load already succeeded
+    }
   }
 
   openUploadModal(mode: UploadMode = 'events'): void {
@@ -104,9 +123,11 @@ export class AppComponent implements OnInit {
 
   showToast(msg: string): void {
     this.toastMsg = msg;
+    this.cdr.detectChanges();
     setTimeout(() => {
       if (this.toastMsg === msg) {
         this.toastMsg = null;
+        this.cdr.detectChanges();
       }
     }, 4500);
   }
@@ -137,13 +158,16 @@ export class AppComponent implements OnInit {
       this.overallSaldo = data.overallSaldo;
     }
     this.isLive = true;
+    this.cdr.detectChanges();
   }
 
-  async fetchEvents(): Promise<void> {
+  async fetchEvents(sync = false): Promise<void> {
     this.isLoading = true;
     this.errorMsg = null;
+    this.cdr.detectChanges();
     try {
-      const response = await fetch('/api/events');
+      const url = sync ? '/api/events?sync=true' : '/api/events';
+      const response = await fetch(url);
       if (!response.ok) {
         throw new Error(`Server returned HTTP ${response.status}`);
       }
@@ -154,6 +178,7 @@ export class AppComponent implements OnInit {
       this.errorMsg = 'Unable to connect to local TimeTracker server.';
     } finally {
       this.isLoading = false;
+      this.cdr.detectChanges();
     }
   }
 
@@ -208,6 +233,7 @@ export class AppComponent implements OnInit {
       }
     } catch {
       this.errorMsg = 'Failed to save override to local server.';
+      this.cdr.detectChanges();
     }
   }
 
@@ -283,6 +309,7 @@ export class AppComponent implements OnInit {
       );
     } finally {
       this.isLoading = false;
+      this.cdr.detectChanges();
     }
   }
 

@@ -6,14 +6,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
-import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 
@@ -26,17 +24,6 @@ public class EventsRepository {
 
     public EventsRepository(FileSytemService fileSytemService) {
         this.fileSytemService = fileSytemService;
-    }
-
-    public synchronized Optional<String> readSyncState() {
-        return fileSytemService.loadJson(fileSytemService.resolveSyncStateFile(), new TypeReference<Map<String, String>>() {})
-                .map(p -> p.get("last_timestamp"))
-                .filter(ts -> ts != null && !ts.isBlank())
-                .map(ts -> ts.trim());
-    }
-
-    public synchronized void writeSyncState(String lastTimestamp) throws IOException {
-        fileSytemService.storeJson(fileSytemService.resolveSyncStateFile(), Collections.singletonMap("last_timestamp", lastTimestamp));
     }
 
     public synchronized List<TrackerEvent> readEventsForMonth(String monthKey) {

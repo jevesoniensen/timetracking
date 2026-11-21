@@ -139,10 +139,10 @@
       </div>
 
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" (click)="closeModal.emit()" [disabled]="isSaving">
+        <button mat-stroked-button type="button" class="btn btn-secondary" (click)="closeModal.emit()" [disabled]="isSaving">
           Cancel
         </button>
-        <button type="submit" class="btn btn-primary" [disabled]="isSaving">
+        <button mat-flat-button type="submit" class="btn btn-primary" [disabled]="isSaving">
           {{ isSaving ? 'Saving...' : 'Save Work Day' }}
         </button>
       </div>

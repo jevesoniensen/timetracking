@@ -1,6 +1,10 @@
-import { Component, Input, Output, EventEmitter } from '@angular/core';
+import { Component, Input, Output, EventEmitter, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { MatButtonModule } from '@angular/material/button';
+import { MatCardModule } from '@angular/material/card';
+import { MatProgressBarModule } from '@angular/material/progress-bar';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import type { DaySummary, LunchConfig, CustomBreak, TrackerEvent, BreakIconType } from '../../types';
 import { BreakIconPickerComponent, getBreakIconLabel } from './BreakIcon';
 import searchIcon from '../../assets/icons/search.svg';
@@ -32,10 +36,20 @@ type SortDirection = 'asc' | 'desc';
 @Component({
   selector: 'app-work-hours-table',
   standalone: true,
-  imports: [CommonModule, FormsModule, BreakIconPickerComponent],
+  imports: [
+    CommonModule,
+    FormsModule,
+    MatButtonModule,
+    MatCardModule,
+    MatProgressBarModule,
+    MatTooltipModule,
+    BreakIconPickerComponent,
+  ],
   template,
 })
 export class WorkHoursTableComponent {
+  private readonly cdr = inject(ChangeDetectorRef);
+
   @Input() days: DaySummary[] = [];
   @Input() monthLabel = '';
   @Input() lunchConfig?: LunchConfig;
@@ -201,6 +215,7 @@ export class WorkHoursTableComponent {
     setTimeout(() => {
       if (this.activeDropdown === 'hour') {
         this.activeDropdown = null;
+        this.cdr.detectChanges();
       }
     }, 150);
     if (this.editHour.length === 1) {
@@ -215,6 +230,7 @@ export class WorkHoursTableComponent {
     setTimeout(() => {
       if (this.activeDropdown === 'minute') {
         this.activeDropdown = null;
+        this.cdr.detectChanges();
       }
     }, 150);
     if (this.editMinute.length === 1) {

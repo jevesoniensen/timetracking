@@ -20,26 +20,19 @@
     </div>
 
     <div class="modal-body">
-      <div style="display: flex; gap: 0.5rem">
-        <button
-          type="button"
-          class="btn btn-sm"
-          [ngClass]="mode === 'events' ? 'btn-primary' : 'btn-secondary'"
-          style="flex: 1; justify-content: center"
-          (click)="setMode('events')"
-        >
+      <mat-button-toggle-group
+        [value]="mode"
+        (change)="setMode($event.value)"
+        aria-label="Import mode"
+        style="display: flex; width: 100%"
+      >
+        <mat-button-toggle value="events" style="flex: 1">
           Startup / Shutdown Events
-        </button>
-        <button
-          type="button"
-          class="btn btn-sm"
-          [ngClass]="mode === 'overrides' ? 'btn-primary' : 'btn-secondary'"
-          style="flex: 1; justify-content: center"
-          (click)="setMode('overrides')"
-        >
+        </mat-button-toggle>
+        <mat-button-toggle value="overrides" style="flex: 1">
           User Overrides &amp; Breaks
-        </button>
-      </div>
+        </mat-button-toggle>
+      </mat-button-toggle-group>
 
       <div
         class="drop-zone"
@@ -93,20 +86,16 @@
       </div>
 
       <div class="option-row">
-        <label class="checkbox-label">
-          <input
-            type="checkbox"
-            name="clearAll"
-            [(ngModel)]="clearAll"
-          />
-          <span>
-            {{
-              mode === 'overrides'
-                ? 'Clear all existing override files before importing'
-                : 'Replace entire database (wipe all other months)'
-            }}
-          </span>
-        </label>
+        <mat-checkbox
+          name="clearAll"
+          [(ngModel)]="clearAll"
+        >
+          {{
+            mode === 'overrides'
+              ? 'Clear all existing override files before importing'
+              : 'Replace entire database (wipe all other months)'
+          }}
+        </mat-checkbox>
         <span class="option-hint">
           {{
             clearAll
@@ -120,10 +109,11 @@
     </div>
 
     <div class="modal-footer">
-      <button class="btn btn-secondary" (click)="closeModal.emit()" [disabled]="isLoading">
+      <button mat-stroked-button class="btn btn-secondary" (click)="closeModal.emit()" [disabled]="isLoading">
         Cancel
       </button>
       <button
+        mat-flat-button
         class="btn btn-primary"
         (click)="handleSubmit()"
         [disabled]="isLoading || !fileContent.trim()"

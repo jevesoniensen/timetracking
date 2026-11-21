@@ -10,37 +10,41 @@
 
   <div class="header-right">
     <button
+      mat-stroked-button
       class="btn btn-secondary"
       (click)="openCustomWorkDay.emit()"
-      title="Add a custom day of work from scratch"
+      matTooltip="Add a custom day of work from scratch"
     >
       <img [src]="calendarPlusIcon" alt="" class="btn-icon" />
       <span>Add Work Day</span>
     </button>
 
     <button
+      mat-stroked-button
       class="btn btn-secondary"
       (click)="openVacation.emit()"
-      title="Enter vacation by single day or period"
+      matTooltip="Enter vacation by single day or period"
     >
       <img [src]="sunIcon" alt="" class="btn-icon" />
       <span>Vacation</span>
     </button>
 
     <button
+      mat-stroked-button
       class="btn btn-secondary"
       (click)="refresh.emit()"
       [disabled]="isLoading"
-      title="Refresh Events from Windows logs"
+      matTooltip="Refresh Events from Windows logs"
     >
       <img [src]="refreshIcon" alt="" class="btn-icon" [class.spinning]="isLoading" />
       <span>{{ isLoading ? 'Syncing...' : 'Refresh' }}</span>
     </button>
 
     <button
+      mat-flat-button
       class="btn btn-primary"
       (click)="exportCsv.emit()"
-      [title]="'Export ' + activeMonthLabel + ' as CSV'"
+      [matTooltip]="'Export ' + activeMonthLabel + ' as CSV'"
     >
       <img [src]="downloadIcon" alt="" class="btn-icon" />
       <span>Export CSV</span>
@@ -48,21 +52,21 @@
 
     <div class="header-menu-wrapper">
       <button
+        mat-icon-button
         type="button"
         class="btn btn-secondary btn-more"
-        (click)="toggleMenu()"
-        title="More options"
+        [matMenuTriggerFor]="moreMenu"
+        matTooltip="More options"
         aria-label="More options"
-        [attr.aria-expanded]="menuOpen"
       >
         <img [src]="moreVerticalIcon" alt="" class="btn-icon" />
       </button>
 
-      <div *ngIf="menuOpen" class="header-dropdown-menu" role="menu">
+      <mat-menu #moreMenu="matMenu" xPosition="before" class="dark-mat-menu">
         <button
+          mat-menu-item
           type="button"
           class="header-dropdown-item"
-          role="menuitem"
           (click)="selectUpload('events')"
         >
           <img [src]="uploadIcon" alt="" class="btn-icon" />
@@ -70,15 +74,15 @@
         </button>
 
         <button
+          mat-menu-item
           type="button"
           class="header-dropdown-item"
-          role="menuitem"
           (click)="selectUpload('overrides')"
         >
           <img [src]="editIcon" alt="" class="btn-icon" />
           <span>Upload Overrides</span>
         </button>
-      </div>
+      </mat-menu>
     </div>
   </div>
 </header>

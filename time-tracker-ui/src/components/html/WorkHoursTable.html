@@ -1,4 +1,4 @@
-<div class="table-card">
+<mat-card class="table-card">
   <div class="table-header-bar">
     <div class="table-title-group">
       <h2>Daily Work Hours — {{ monthLabel }}</h2>
@@ -13,19 +13,21 @@
     <div class="table-controls">
       <button
         *ngIf="onOpenCustomWorkDay"
+        mat-stroked-button
         type="button"
         class="btn btn-secondary btn-sm"
         (click)="onOpenCustomWorkDay()"
-        title="Create or override a custom work day from scratch"
+        matTooltip="Create or override a custom work day from scratch"
       >
         + Work Day
       </button>
       <button
         *ngIf="onOpenVacation"
+        mat-stroked-button
         type="button"
         class="btn btn-secondary btn-sm"
         (click)="onOpenVacation()"
-        title="Add or manage vacation by single day or period"
+        matTooltip="Add or manage vacation by single day or period"
       >
         + Vacation
       </button>
@@ -167,25 +169,34 @@
 
         <ng-container *ngFor="let day of filteredDays">
           <tr
-            class="day-row"
+            class="table-row day-row"
+            [class.row-expanded]="expandedDay === day.date"
             [class.expanded]="expandedDay === day.date"
             [class.weekend-row]="day.isWeekend"
+            [class.saturday-row]="day.dayOfWeek === 'Sat'"
+            [class.sunday-row]="day.dayOfWeek === 'Sun'"
             [class.vacation-row]="day.isVacation"
             [class.in-progress-row]="day.status === 'in_progress'"
             (click)="toggleExpand(day.date)"
           >
             <td class="cell-date">
-              <div class="date-display">
+              <div class="date-chip date-display">
                 <span class="date-primary">{{ day.formattedDate }}</span>
                 <span class="date-raw">{{ day.date }}</span>
               </div>
             </td>
             <td class="cell-day">
               <div style="display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap">
-                <span class="day-badge" [class.weekend]="day.isWeekend">
+                <span
+                  class="weekday-pill day-badge"
+                  [class.workday]="!day.isWeekend"
+                  [class.weekend]="day.isWeekend"
+                  [class.saturday]="day.dayOfWeek === 'Sat'"
+                  [class.sunday]="day.dayOfWeek === 'Sun'"
+                >
                   {{ day.dayOfWeek }}
                 </span>
-                <span *ngIf="day.isVacation" class="vacation-badge" title="Vacation day (0h expected)">
+                <span *ngIf="day.isVacation" class="vacation-pill vacation-badge" title="Vacation day (0h expected)">
                   Vacation
                 </span>
               </div>
@@ -602,11 +613,11 @@
                   </span>
                 </div>
                 <div *ngIf="day.durationSeconds > 0" class="duration-bar-track">
-                  <div
-                    class="duration-bar-fill"
+                  <mat-progress-bar
+                    mode="determinate"
+                    [value]="getDurationPercent(day.durationSeconds)"
                     [class.overtime]="day.durationSeconds >= 28800"
-                    [style.width.%]="getDurationPercent(day.durationSeconds)"
-                  ></div>
+                  ></mat-progress-bar>
                 </div>
               </div>
             </td>
@@ -764,4 +775,4 @@
       </tbody>
     </table>
   </div>
-</div>
+</mat-card>

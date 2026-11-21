@@ -36,7 +36,7 @@ impl Config {
     pub fn effective_start_work_date(&self) -> Option<String> {
         if let Some(ref date) = self.start_work_date {
             let trimmed = date.trim();
-            if trimmed.len() >= 10 {
+            if trimmed.len() >= 10 && is_valid_date(&trimmed[..10]) {
                 return Some(trimmed[..10].to_string());
             }
         }
@@ -52,7 +52,7 @@ impl Config {
                     let rest = rest.trim_start();
                     if let Some(val) = rest.strip_prefix('=') {
                         let val = val.trim();
-                        if val.len() >= 10 {
+                        if val.len() >= 10 && is_valid_date(&val[..10]) {
                             return Some(val[..10].to_string());
                         }
                     }
@@ -121,6 +121,16 @@ impl From<&Config> for Config {
     }
 }
 
+fn is_valid_date(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    bytes.len() == 10
+        && bytes[0..4].iter().all(|b| b.is_ascii_digit())
+        && bytes[4] == b'-'
+        && bytes[5..7].iter().all(|b| b.is_ascii_digit())
+        && bytes[7] == b'-'
+        && bytes[8..10].iter().all(|b| b.is_ascii_digit())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -148,5 +158,14 @@ mod tests {
 
         let c2: Config = PathBuf::from("another_path").into();
         assert_eq!(c2.base_path(), Path::new("another_path"));
+    }
+
+    #[test]
+    fn test_effective_start_work_date_validation() {
+        let valid = Config::new("tracker_data").with_start_work_date("2026-07-01");
+        assert_eq!(valid.effective_start_work_date(), Some("2026-07-01".to_string()));
+
+        let invalid = Config::new("tracker_data").with_start_work_date("not-a-date");
+        assert_eq!(invalid.effective_start_work_date(), None);
     }
 }

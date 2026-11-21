@@ -47,3 +47,13 @@ if (Test-Path ".\venv\Scripts\activate.ps1") {
 }
 ```
 3. Save and close Notepad. Your environment will now activate automatically.
+
+## Architecture Rules
+
+### Windows OS Events & `time_tracker_event_reader`
+
+Interaction with Windows operating system events (reading Windows Event Logs and generating `events/events-yyyy-mm.json` as well as managing `sync_state.json`) is **exclusively** handled by the Rust crate `time_tracker_event_reader`:
+
+- **Never read Windows OS events in Java (`time-tracker-local-server`)**: The Java backend must never query Windows Event Logs or manage `sync_state.json`.
+- **Never run PowerShell commands from Java**: Do not spawn `powershell` or `Get-WinEvent` processes from Java code.
+- **Single responsibility**: `time_tracker_event_reader` is the sole component responsible for reading Windows system events and generating the monthly `events-*.json` files. The Java server only consumes the generated `events-*.json` files to compute work summaries and serve the HTTP API.

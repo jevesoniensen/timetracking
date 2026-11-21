@@ -1,13 +1,8 @@
-import {
-  Component,
-  Input,
-  Output,
-  EventEmitter,
-  ElementRef,
-  HostListener,
-  inject,
-} from '@angular/core';
+import { Component, Input, Output, EventEmitter } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { MatButtonModule } from '@angular/material/button';
+import { MatMenuModule } from '@angular/material/menu';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import clockIcon from '../../assets/icons/clock.svg';
 import calendarPlusIcon from '../../assets/icons/calendar-plus.svg';
 import sunIcon from '../../assets/icons/sun.svg';
@@ -21,7 +16,7 @@ import template from '../html/Header.html?raw';
 @Component({
   selector: 'app-header',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, MatButtonModule, MatMenuModule, MatTooltipModule],
   template,
 })
 export class HeaderComponent {
@@ -34,7 +29,6 @@ export class HeaderComponent {
   @Output() openVacation = new EventEmitter<void>();
   @Output() openCustomWorkDay = new EventEmitter<void>();
 
-  menuOpen = false;
   readonly clockIcon = clockIcon;
   readonly calendarPlusIcon = calendarPlusIcon;
   readonly sunIcon = sunIcon;
@@ -44,28 +38,7 @@ export class HeaderComponent {
   readonly uploadIcon = uploadIcon;
   readonly editIcon = editIcon;
 
-  private readonly elRef = inject(ElementRef);
-
-  toggleMenu(): void {
-    this.menuOpen = !this.menuOpen;
-  }
-
   selectUpload(mode: 'events' | 'overrides'): void {
-    this.menuOpen = false;
     this.openUpload.emit(mode);
-  }
-
-  @HostListener('document:mousedown', ['$event'])
-  onDocumentMouseDown(event: MouseEvent): void {
-    if (this.menuOpen && !this.elRef.nativeElement.contains(event.target)) {
-      this.menuOpen = false;
-    }
-  }
-
-  @HostListener('document:keydown', ['$event'])
-  onDocumentKeyDown(event: KeyboardEvent): void {
-    if (this.menuOpen && event.key === 'Escape') {
-      this.menuOpen = false;
-    }
   }
 }

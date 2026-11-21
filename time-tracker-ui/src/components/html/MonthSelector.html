@@ -3,14 +3,14 @@
     *ngIf="overallSaldo"
     class="month-tab general-saldo-badge"
     [style.cursor]="'default'"
-    [style.borderColor]="isOverallPositive ? 'rgba(52, 211, 153, 0.35)' : 'rgba(248, 113, 113, 0.35)'"
-    [style.background]="isOverallPositive ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)'"
-    [title]="'General Saldo across ' + overallSaldo.monthsCount + ' month(s): ' + overallSaldo.totalWorkFormatted + ' worked vs. ' + overallSaldo.expectedWorkFormatted + ' expected (excl. today)'"
+    [style.borderColor]="isOverallPositive ? 'var(--accent-emerald-border)' : 'var(--accent-rose-border)'"
+    [style.background]="isOverallPositive ? 'var(--accent-emerald-bg)' : 'var(--accent-rose-bg)'"
+    [matTooltip]="'General Saldo across ' + overallSaldo.monthsCount + ' month(s): ' + overallSaldo.totalWorkFormatted + ' worked vs. ' + overallSaldo.expectedWorkFormatted + ' expected (excl. today)'"
   >
-    <span class="month-name" style="color: #f8fafc">
+    <span class="month-name" style="color: var(--text-white)">
       General Saldo:
       <span
-        [style.color]="isOverallPositive ? '#34d399' : '#f87171'"
+        [style.color]="isOverallPositive ? 'var(--accent-emerald-text)' : 'var(--accent-rose-text)'"
         style="font-family: var(--font-mono)"
       >
         {{ overallSaldo.workBalanceFormatted }}
@@ -28,7 +28,7 @@
       type="button"
       class="timeline-nav-btn left"
       (click)="scrollTimeline('left')"
-      title="Show newer months"
+      matTooltip="Show newer months"
       aria-label="Scroll timeline left"
     >
       <img [src]="chevronLeftIcon" alt="" />
@@ -44,6 +44,7 @@
     >
       <button
         *ngFor="let m of months"
+        matRipple
         role="tab"
         [attr.aria-selected]="m.monthKey === activeMonth"
         class="month-tab timeline-item"
@@ -55,9 +56,9 @@
         <span class="month-chip">
           {{ m.activeDaysCount }} days • {{ m.totalWorkFormatted }}
           <span
-            [style.color]="m.workBalanceSeconds >= 0 ? '#34d399' : '#f87171'"
+            [style.color]="m.workBalanceSeconds >= 0 ? 'var(--accent-emerald-text)' : 'var(--accent-rose-text)'"
             style="font-weight: 700"
-            [title]="'Month Saldo: ' + m.workBalanceFormatted + ' (vs. ' + m.expectedWorkFormatted + ' expected)'"
+            [matTooltip]="'Month Saldo: ' + m.workBalanceFormatted + ' (vs. ' + m.expectedWorkFormatted + ' expected)'"
           >
             ({{ m.workBalanceFormatted }})
           </span>
@@ -70,7 +71,7 @@
       type="button"
       class="timeline-nav-btn right"
       (click)="scrollTimeline('right')"
-      title="Show older months"
+      matTooltip="Show older months"
       aria-label="Scroll timeline right"
     >
       <img [src]="chevronRightIcon" alt="" />

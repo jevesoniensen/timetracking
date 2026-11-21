@@ -126,16 +126,25 @@ impl EventReader for FileEventReader {
                         }
                         let content = fs::read_to_string(&path)?;
                         if let Ok(events) = serde_json::from_str::<Vec<Event>>(&content) {
-                            let filtered: Vec<Event> = match &start_work_date {
-                                Some(start_date) => events
-                                    .into_iter()
-                                    .filter(|ev| {
+                            let mut filtered: Vec<Event> = events
+                                .into_iter()
+                                .filter(|ev| match &start_work_date {
+                                    Some(start_date) => {
                                         ev.timestamp.len() >= 10
                                             && &ev.timestamp[..10] >= start_date.as_str()
-                                    })
-                                    .collect(),
-                                None => events,
-                            };
+                                    }
+                                    None => true,
+                                })
+                                .map(|mut ev| {
+                                    if ev.r#type.as_deref().map_or(true, |t| t.trim().is_empty()) {
+                                        ev.r#type = Event::infer_type(&ev.name);
+                                    }
+                                    ev
+                                })
+                                .collect();
+                            filtered.sort_by(|a, b| {
+                                a.timestamp.cmp(&b.timestamp).then_with(|| a.name.cmp(&b.name))
+                            });
                             if !filtered.is_empty() {
                                 map.insert(month_key.to_string(), filtered);
                             }

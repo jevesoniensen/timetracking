@@ -1,6 +1,9 @@
-import { Component, Input, Output, EventEmitter, OnChanges, SimpleChanges } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnChanges, SimpleChanges, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { MatButtonModule } from '@angular/material/button';
+import { MatButtonToggleModule } from '@angular/material/button-toggle';
+import { MatCheckboxModule } from '@angular/material/checkbox';
 import type { DayOverride } from '../../types';
 import sunIcon from '../../assets/icons/sun.svg';
 import checkCircleIcon from '../../assets/icons/check-circle.svg';
@@ -11,10 +14,18 @@ const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 @Component({
   selector: 'app-vacation-modal',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [
+    CommonModule,
+    FormsModule,
+    MatButtonModule,
+    MatButtonToggleModule,
+    MatCheckboxModule,
+  ],
   template,
 })
 export class VacationModalComponent implements OnChanges {
+  private readonly cdr = inject(ChangeDetectorRef);
+
   @Input() isOpen = false;
   @Input() startWorkDate = '';
   @Input() userOverrides: Record<string, DayOverride> = {};
@@ -110,10 +121,12 @@ export class VacationModalComponent implements OnChanges {
       .then((dates: string[]) => {
         if (Array.isArray(dates)) {
           this.previewDates = dates;
+          this.cdr.detectChanges();
         }
       })
       .catch(() => {
         this.previewDates = [];
+        this.cdr.detectChanges();
       });
   }
 
@@ -151,6 +164,7 @@ export class VacationModalComponent implements OnChanges {
       this.error = err instanceof Error ? err.message : 'Failed to save vacation.';
     } finally {
       this.isSaving = false;
+      this.cdr.detectChanges();
     }
   }
 
@@ -165,6 +179,7 @@ export class VacationModalComponent implements OnChanges {
       this.error = err instanceof Error ? err.message : 'Failed to remove vacation day.';
     } finally {
       this.isSaving = false;
+      this.cdr.detectChanges();
     }
   }
 }

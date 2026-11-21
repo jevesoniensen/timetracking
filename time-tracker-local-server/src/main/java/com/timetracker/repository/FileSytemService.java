@@ -112,12 +112,6 @@ public class FileSytemService {
     // Events Directory & File Access
     // ---------------------------------------------------------
 
-    public Path resolveSyncStateFile() {
-        Path eventsDir = resolvePath(eventsDirPath);
-        Path parent = eventsDir.getParent();
-        return (parent != null ? parent : eventsDir).resolve("sync_state.json");
-    }
-
     public <R> Optional<R> loadJson(Path path, TypeReference<R> valueTypeRef){
 
         if (!Files.isRegularFile(path)) {
