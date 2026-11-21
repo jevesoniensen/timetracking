@@ -1,0 +1,151 @@
+<div *ngIf="isOpen" class="modal-backdrop" (click)="closeModal.emit()">
+  <div class="modal-card" (click)="$event.stopPropagation()" style="max-width: 520px">
+    <div class="modal-header">
+      <div class="modal-title-group">
+        <div class="modal-icon-badge">
+          <img [src]="calendarPlusIcon" alt="" />
+        </div>
+        <div>
+          <h3>Add Custom Work Day</h3>
+          <p class="modal-subtitle">
+            Create or override a work day from scratch in user overrides
+          </p>
+        </div>
+      </div>
+      <button class="modal-close-btn" (click)="closeModal.emit()" aria-label="Close modal">
+        ✕
+      </button>
+    </div>
+
+    <form (ngSubmit)="handleSubmit()">
+      <div class="modal-body" style="display: flex; flex-direction: column; gap: 1.1rem">
+        <div style="display: flex; flex-direction: column; gap: 0.4rem">
+          <label
+            for="custom-workday-date"
+            style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em"
+          >
+            Work Date
+          </label>
+          <input
+            id="custom-workday-date"
+            name="date"
+            type="date"
+            [min]="startWorkDate || null"
+            [(ngModel)]="date"
+            (ngModelChange)="handleDateChange($event)"
+            required
+            style="padding: 0.6rem 0.85rem; border-radius: var(--radius-md); border: 1px solid var(--border-focus); background: var(--surface-primary); color: var(--text-white); font-family: var(--font-mono); font-size: 0.92rem; color-scheme: dark"
+          />
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.85rem">
+          <div style="display: flex; flex-direction: column; gap: 0.4rem">
+            <label
+              for="custom-workday-start"
+              style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em"
+            >
+              Start Work (24h HH:mm)
+            </label>
+            <input
+              id="custom-workday-start"
+              name="startTime"
+              type="text"
+              placeholder="08:30"
+              [(ngModel)]="startTime"
+              (ngModelChange)="error = null"
+              required
+              style="padding: 0.6rem 0.85rem; border-radius: var(--radius-md); border: 1px solid var(--border-focus); background: var(--surface-primary); color: var(--text-white); font-family: var(--font-mono); font-size: 0.92rem"
+            />
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 0.4rem">
+            <label
+              for="custom-workday-end"
+              style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em"
+            >
+              End Work (24h HH:mm)
+            </label>
+            <input
+              id="custom-workday-end"
+              name="endTime"
+              type="text"
+              placeholder="17:30"
+              [(ngModel)]="endTime"
+              (ngModelChange)="error = null"
+              style="padding: 0.6rem 0.85rem; border-radius: var(--radius-md); border: 1px solid var(--border-focus); background: var(--surface-primary); color: var(--text-white); font-family: var(--font-mono); font-size: 0.92rem"
+            />
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 0.5rem">
+          <span
+            style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em"
+          >
+            Custom Breaks (Optional, 24h HH:mm)
+          </span>
+          <div style="display: flex; align-items: center; gap: 0.5rem">
+            <app-break-icon-picker
+              [value]="newBreakIcon"
+              (iconChange)="newBreakIcon = $event"
+            ></app-break-icon-picker>
+            <input
+              type="text"
+              name="newBreakStart"
+              class="override-time-input"
+              style="width: 95px"
+              placeholder="15:00"
+              [(ngModel)]="newBreakStart"
+            />
+            <span class="break-sep">–</span>
+            <input
+              type="text"
+              name="newBreakEnd"
+              class="override-time-input"
+              style="width: 95px"
+              placeholder="15:30"
+              [(ngModel)]="newBreakEnd"
+            />
+            <button
+              type="button"
+              class="btn btn-secondary btn-sm"
+              (click)="handleAddBreak()"
+            >
+              + Add Break
+            </button>
+          </div>
+
+          <div *ngIf="breaks.length > 0" style="display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 0.25rem">
+            <div *ngFor="let cb of breaks; let idx = index" class="time-pill custom-break">
+              <app-break-icon-picker
+                [value]="cb.icon"
+                (iconChange)="updateBreakIcon(idx, $event)"
+              ></app-break-icon-picker>
+              <span class="timestamp-mono">
+                {{ cb.start }} – {{ cb.end }}
+              </span>
+              <button
+                type="button"
+                class="remove-break-btn"
+                (click)="handleRemoveBreak(idx)"
+                title="Remove break"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div *ngIf="error" class="modal-error">{{ error }}</div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" (click)="closeModal.emit()" [disabled]="isSaving">
+          Cancel
+        </button>
+        <button type="submit" class="btn btn-primary" [disabled]="isSaving">
+          {{ isSaving ? 'Saving...' : 'Save Work Day' }}
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

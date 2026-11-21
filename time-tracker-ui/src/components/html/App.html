@@ -1,0 +1,96 @@
+<div class="app-shell">
+  <div class="app-container">
+    <app-header
+      [isLoading]="isLoading"
+      [activeMonthLabel]="activeMonthSummary?.monthLabel || 'Current Month'"
+      (refresh)="fetchEvents()"
+      (exportCsv)="handleExportCsv()"
+      (openUpload)="openUploadModal($event)"
+      (openVacation)="isVacationModalOpen = true"
+      (openCustomWorkDay)="isCustomWorkDayModalOpen = true"
+    ></app-header>
+
+    <div *ngIf="toastMsg" class="toast-banner">
+      <img [src]="checkCircleIcon" alt="" class="toast-icon" />
+      <span>{{ toastMsg }}</span>
+    </div>
+
+    <div *ngIf="errorMsg" class="error-banner">
+      <span>{{ errorMsg }}</span>
+    </div>
+
+    <app-month-selector
+      *ngIf="monthList.length > 0"
+      [months]="monthList"
+      [activeMonth]="activeMonthSummary?.monthKey || ''"
+      [overallSaldo]="overallSaldo"
+      (selectMonth)="selectedMonth = $event"
+    ></app-month-selector>
+
+    <main *ngIf="activeMonthSummary; else loadingState" class="content-area">
+      <div class="main-table-column">
+        <app-work-hours-table
+          [days]="activeMonthSummary.days"
+          [monthLabel]="activeMonthSummary.monthLabel"
+          [lunchConfig]="lunchConfig"
+          [onSaveOverride]="boundSaveOverride"
+          [onOpenVacation]="boundOpenVacation"
+          [onOpenCustomWorkDay]="boundOpenCustomWorkDay"
+        ></app-work-hours-table>
+      </div>
+      <aside class="metrics-sidebar" aria-label="Monthly statistics">
+        <app-metrics-cards
+          [summary]="activeMonthSummary"
+          [lunchConfig]="lunchConfig"
+          [overallSaldo]="overallSaldo"
+        ></app-metrics-cards>
+      </aside>
+    </main>
+
+    <ng-template #loadingState>
+      <div class="empty-container">
+        <div class="loading-spinner"></div>
+        <p>Loading work tracking events...</p>
+      </div>
+    </ng-template>
+
+    <app-upload-modal
+      [isOpen]="isUploadOpen"
+      [initialMode]="uploadMode"
+      [isLoading]="isLoading"
+      [onUpload]="boundUploadLog"
+      (closeModal)="isUploadOpen = false"
+    ></app-upload-modal>
+
+    <app-start-work-date-modal
+      [isOpen]="isStartDateModalOpen"
+      [defaultSuggestedDate]="lunchConfig.startWorkDate"
+      [onSave]="boundSaveStartWorkDate"
+    ></app-start-work-date-modal>
+
+    <app-vacation-modal
+      [isOpen]="isVacationModalOpen"
+      [startWorkDate]="lunchConfig.startWorkDate || ''"
+      [userOverrides]="userOverrides"
+      [onSaveVacation]="boundSaveVacation"
+      (closeModal)="isVacationModalOpen = false"
+    ></app-vacation-modal>
+
+    <app-custom-work-day-modal
+      [isOpen]="isCustomWorkDayModalOpen"
+      [startWorkDate]="lunchConfig.startWorkDate || ''"
+      [userOverrides]="userOverrides"
+      [onSaveWorkDay]="boundSaveCustomWorkDay"
+      (closeModal)="isCustomWorkDayModalOpen = false"
+    ></app-custom-work-day-modal>
+  </div>
+
+  <div
+    class="status-badge bottom-right"
+    [ngClass]="isLive ? 'live' : 'fallback'"
+    [title]="isLive ? 'Local Server Connected' : 'Server Disconnected'"
+    [attr.aria-label]="isLive ? 'Local Server Connected' : 'Server Disconnected'"
+  >
+    <span class="status-dot"></span>
+  </div>
+</div>

@@ -33,11 +33,11 @@ tasks.register('buildReactApp', Exec) {
         // Inject the venv Scripts directory into PATH so both 'npm' and 'node' are located.
         def venvScripts = file('venv/Scripts').absolutePath
         environment 'PATH', "${venvScripts};" + (System.getenv('PATH') ?: '')
-        commandLine 'cmd', '/c', 'npm install && npm run build'
+        commandLine 'cmd', '/c', 'npm install --legacy-peer-deps && npm run build'
     } else {
         def venvBin = file('venv/bin').absolutePath
         environment 'PATH', "${venvBin}:" + (System.getenv('PATH') ?: '')
-        commandLine 'sh', '-c', 'npm install && npm run build'
+        commandLine 'sh', '-c', 'npm install --legacy-peer-deps && npm run build'
     }
 }
 

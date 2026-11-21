@@ -1,0 +1,135 @@
+<div *ngIf="isOpen" class="modal-backdrop" (click)="closeModal.emit()">
+  <div class="modal-card" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <div class="modal-title-group">
+        <div class="modal-icon-badge">
+          <img [src]="uploadIcon" alt="" />
+        </div>
+        <div>
+          <h3>{{ mode === 'overrides' ? 'Import Overrides & Breaks' : 'Import Custom Log File' }}</h3>
+          <p class="modal-subtitle">
+            {{
+              mode === 'overrides'
+                ? 'Upload start/end overrides and custom breaks (.exception, .log, .txt)'
+                : 'Upload your startup/shutdown logs to overwrite existing events'
+            }}
+          </p>
+        </div>
+      </div>
+      <button class="modal-close-btn" (click)="closeModal.emit()" aria-label="Close modal">✕</button>
+    </div>
+
+    <div class="modal-body">
+      <div style="display: flex; gap: 0.5rem">
+        <button
+          type="button"
+          class="btn btn-sm"
+          [ngClass]="mode === 'events' ? 'btn-primary' : 'btn-secondary'"
+          style="flex: 1; justify-content: center"
+          (click)="setMode('events')"
+        >
+          Startup / Shutdown Events
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm"
+          [ngClass]="mode === 'overrides' ? 'btn-primary' : 'btn-secondary'"
+          style="flex: 1; justify-content: center"
+          (click)="setMode('overrides')"
+        >
+          User Overrides &amp; Breaks
+        </button>
+      </div>
+
+      <div
+        class="drop-zone"
+        [class.dragging]="isDragging"
+        (dragover)="onDragOver($event)"
+        (dragleave)="isDragging = false"
+        (drop)="handleDrop($event)"
+        (click)="fileInputRef?.nativeElement?.click()"
+      >
+        <input
+          #fileInput
+          type="file"
+          accept=".exception,.log,.txt,.csv"
+          style="display: none"
+          (change)="onFileInputChange($event)"
+        />
+
+        <img [src]="cloudUploadIcon" alt="" class="drop-icon" />
+
+        <div *ngIf="fileName; else emptyHint" class="file-selected-info">
+          <span class="file-name">{{ fileName }}</span>
+          <span class="file-change-hint">Click or drop another file to replace</span>
+        </div>
+        <ng-template #emptyHint>
+          <div class="drop-hint">
+            <p><strong>Click to choose a file</strong> or drag and drop here</p>
+            <span>Supports .exception, .log, .txt format files</span>
+          </div>
+        </ng-template>
+      </div>
+
+      <div class="format-info-box">
+        <span class="format-title">Expected File Format:</span>
+        <pre *ngIf="mode === 'overrides'; else eventsFormat" class="format-code">{{ overridesFormatSample }}</pre>
+        <ng-template #eventsFormat>
+          <pre class="format-code">{{ eventsFormatSample }}</pre>
+        </ng-template>
+      </div>
+
+      <div *ngIf="parsedPreview && parsedPreview.totalCount > 0" class="preview-card">
+        <img [src]="checkCircleIcon" alt="" class="preview-icon" />
+        <div>
+          <strong *ngIf="parsedPreview.kind === 'overrides'; else eventsPreviewTitle">
+            Ready to import {{ parsedPreview.totalCount }} override rules across {{ parsedPreview.dayCount }} day(s)
+          </strong>
+          <ng-template #eventsPreviewTitle>
+            <strong>Ready to import {{ parsedPreview.totalCount }} events</strong>
+          </ng-template>
+          <p>Detected months: {{ parsedPreview.months.join(', ') }}</p>
+        </div>
+      </div>
+
+      <div class="option-row">
+        <label class="checkbox-label">
+          <input
+            type="checkbox"
+            name="clearAll"
+            [(ngModel)]="clearAll"
+          />
+          <span>
+            {{
+              mode === 'overrides'
+                ? 'Clear all existing override files before importing'
+                : 'Replace entire database (wipe all other months)'
+            }}
+          </span>
+        </label>
+        <span class="option-hint">
+          {{
+            clearAll
+              ? 'All existing months will be deleted and replaced with this file'
+              : 'Only matching months will be overwritten; other months remain safe'
+          }}
+        </span>
+      </div>
+
+      <div *ngIf="error" class="modal-error">{{ error }}</div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-secondary" (click)="closeModal.emit()" [disabled]="isLoading">
+        Cancel
+      </button>
+      <button
+        class="btn btn-primary"
+        (click)="handleSubmit()"
+        [disabled]="isLoading || !fileContent.trim()"
+      >
+        {{ isLoading ? 'Importing...' : 'Import & Save' }}
+      </button>
+    </div>
+  </div>
+</div>
