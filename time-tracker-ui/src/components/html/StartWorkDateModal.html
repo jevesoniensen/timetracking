@@ -1,0 +1,58 @@
+<div *ngIf="isOpen" class="modal-backdrop">
+  <div class="modal-card" (click)="$event.stopPropagation()" style="max-width: 480px">
+    <div class="modal-header">
+      <div class="modal-title-group">
+        <div class="modal-icon-badge">
+          <img [src]="calendarIcon" alt="" />
+        </div>
+        <div>
+          <h3>Set Your Start Work Date</h3>
+          <p class="modal-subtitle">
+            Configure when your time tracking and saldo calculation should begin
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <form (ngSubmit)="handleSubmit()">
+      <div class="modal-body" style="display: flex; flex-direction: column; gap: 1rem">
+        <p style="font-size: 0.88rem; color: var(--text-muted); line-height: 1.5">
+          Please select your <strong>Start Work Date</strong>. Days prior to this date will not be
+          counted toward your monthly or general work hours saldo. Once saved to
+          <code>config.properties</code>, you won't be asked again.
+        </p>
+
+        <div style="display: flex; flex-direction: column; gap: 0.45rem">
+          <label
+            for="start-work-date-input"
+            style="font-size: 0.8rem; font-weight: 600; color: var(--text-white); text-transform: uppercase; letter-spacing: 0.04em"
+          >
+            Start Work Date (YYYY-MM-DD)
+          </label>
+          <input
+            id="start-work-date-input"
+            name="startWorkDate"
+            type="date"
+            [(ngModel)]="dateValue"
+            (ngModelChange)="error = null"
+            required
+            style="padding: 0.65rem 0.9rem; border-radius: var(--radius-md); border: 1px solid var(--border-focus); background: var(--surface-primary); color: var(--text-white); font-family: var(--font-mono); font-size: 0.95rem; color-scheme: dark"
+          />
+        </div>
+
+        <div *ngIf="error" class="modal-error">{{ error }}</div>
+      </div>
+
+      <div class="modal-footer">
+        <button
+          type="submit"
+          class="btn btn-primary"
+          [disabled]="isSaving || !dateValue.trim()"
+          style="width: 100%; justify-content: center"
+        >
+          {{ isSaving ? 'Saving...' : 'Save Start Work Date' }}
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

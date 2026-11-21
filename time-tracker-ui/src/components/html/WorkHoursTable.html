@@ -1,0 +1,767 @@
+<div class="table-card">
+  <div class="table-header-bar">
+    <div class="table-title-group">
+      <h2>Daily Work Hours — {{ monthLabel }}</h2>
+      <span class="record-badge">
+        {{ filteredDays.length }} {{ filteredDays.length === 1 ? 'day' : 'days' }}
+        <ng-container *ngIf="vacationDaysInMonth > 0">
+          • {{ vacationDaysInMonth }} vacation
+        </ng-container>
+      </span>
+    </div>
+
+    <div class="table-controls">
+      <button
+        *ngIf="onOpenCustomWorkDay"
+        type="button"
+        class="btn btn-secondary btn-sm"
+        (click)="onOpenCustomWorkDay()"
+        title="Create or override a custom work day from scratch"
+      >
+        + Work Day
+      </button>
+      <button
+        *ngIf="onOpenVacation"
+        type="button"
+        class="btn btn-secondary btn-sm"
+        (click)="onOpenVacation()"
+        title="Add or manage vacation by single day or period"
+      >
+        + Vacation
+      </button>
+      <div class="search-box">
+        <img [src]="searchIcon" alt="" class="search-icon" />
+        <input
+          type="text"
+          placeholder="Filter by date, weekday..."
+          [(ngModel)]="filterQuery"
+          class="search-input"
+        />
+        <button
+          *ngIf="filterQuery"
+          class="clear-search-btn"
+          (click)="filterQuery = ''"
+          title="Clear filter"
+        >
+          ✕
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="table-wrapper">
+    <table class="work-table">
+      <thead>
+        <tr>
+          <th
+            scope="col"
+            class="sortable-th"
+            style="width: 15%"
+            (click)="toggleSort('date')"
+            title="Sort by date"
+          >
+            <div class="th-content">
+              Date
+              <span class="sort-icon" [ngClass]="sortField === 'date' ? 'active' : 'inactive'">
+                {{ sortField === 'date' ? (sortDirection === 'desc' ? '↓' : '↑') : '↕' }}
+              </span>
+            </div>
+          </th>
+          <th
+            scope="col"
+            class="sortable-th"
+            style="width: 9%"
+            (click)="toggleSort('day')"
+            title="Sort by weekday"
+          >
+            <div class="th-content">
+              Day
+              <span class="sort-icon" [ngClass]="sortField === 'day' ? 'active' : 'inactive'">
+                {{ sortField === 'day' ? (sortDirection === 'desc' ? '↓' : '↑') : '↕' }}
+              </span>
+            </div>
+          </th>
+          <th
+            scope="col"
+            class="sortable-th"
+            style="width: 17%"
+            (click)="toggleSort('start')"
+            title="Sort by start time"
+          >
+            <div class="th-content">
+              <span class="th-indicator start"></span>
+              Start
+              <span class="sort-icon" [ngClass]="sortField === 'start' ? 'active' : 'inactive'">
+                {{ sortField === 'start' ? (sortDirection === 'desc' ? '↓' : '↑') : '↕' }}
+              </span>
+            </div>
+          </th>
+          <th scope="col" style="width: 17%">
+            <div class="th-content">
+              <span class="th-indicator lunch"></span>
+              Lunch Break
+            </div>
+          </th>
+          <th
+            scope="col"
+            class="sortable-th"
+            style="width: 17%"
+            (click)="toggleSort('end')"
+            title="Sort by end time"
+          >
+            <div class="th-content">
+              <span class="th-indicator end"></span>
+              End
+              <span class="sort-icon" [ngClass]="sortField === 'end' ? 'active' : 'inactive'">
+                {{ sortField === 'end' ? (sortDirection === 'desc' ? '↓' : '↑') : '↕' }}
+              </span>
+            </div>
+          </th>
+          <th
+            scope="col"
+            class="sortable-th"
+            style="width: 11%"
+            (click)="toggleSort('duration')"
+            title="Sort by worked duration"
+          >
+            <div class="th-content">
+              Duration
+              <span class="sort-icon" [ngClass]="sortField === 'duration' ? 'active' : 'inactive'">
+                {{ sortField === 'duration' ? (sortDirection === 'desc' ? '↓' : '↑') : '↕' }}
+              </span>
+            </div>
+          </th>
+          <th
+            scope="col"
+            class="sortable-th"
+            style="width: 10%"
+            (click)="toggleSort('saldo')"
+            title="Sort by daily saldo (worked vs. expected)"
+          >
+            <div class="th-content">
+              Saldo
+              <span class="sort-icon" [ngClass]="sortField === 'saldo' ? 'active' : 'inactive'">
+                {{ sortField === 'saldo' ? (sortDirection === 'desc' ? '↓' : '↑') : '↕' }}
+              </span>
+            </div>
+          </th>
+          <th scope="col" style="width: 4%; text-align: right"></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngIf="filteredDays.length === 0">
+          <td colspan="8" class="empty-state-cell">
+            <div class="empty-state">
+              <img [src]="infoCircleIcon" alt="" class="empty-icon" />
+              <p>No system work logs found for this period</p>
+              <button
+                *ngIf="filterQuery"
+                class="btn btn-secondary btn-sm"
+                (click)="filterQuery = ''"
+              >
+                Clear search filter
+              </button>
+            </div>
+          </td>
+        </tr>
+
+        <ng-container *ngFor="let day of filteredDays">
+          <tr
+            class="day-row"
+            [class.expanded]="expandedDay === day.date"
+            [class.weekend-row]="day.isWeekend"
+            [class.vacation-row]="day.isVacation"
+            [class.in-progress-row]="day.status === 'in_progress'"
+            (click)="toggleExpand(day.date)"
+          >
+            <td class="cell-date">
+              <div class="date-display">
+                <span class="date-primary">{{ day.formattedDate }}</span>
+                <span class="date-raw">{{ day.date }}</span>
+              </div>
+            </td>
+            <td class="cell-day">
+              <div style="display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap">
+                <span class="day-badge" [class.weekend]="day.isWeekend">
+                  {{ day.dayOfWeek }}
+                </span>
+                <span *ngIf="day.isVacation" class="vacation-badge" title="Vacation day (0h expected)">
+                  Vacation
+                </span>
+              </div>
+            </td>
+
+            <!-- START CELL -->
+            <td class="cell-time" (click)="$event.stopPropagation()">
+              <div *ngIf="isEditing(day.date, 'start'); else startDisplay" class="override-editor">
+                <div class="override-editor-row">
+                  <div class="split-time-input-group">
+                    <div class="split-time-box">
+                      <input
+                        type="text"
+                        inputmode="numeric"
+                        maxlength="2"
+                        class="split-time-field"
+                        placeholder="HH"
+                        [(ngModel)]="editHour"
+                        (focus)="activeDropdown = 'hour'"
+                        (blur)="handleHourBlur()"
+                        (keydown.enter)="commitEditing(day, 'start')"
+                        (keydown.escape)="cancelEditing()"
+                      />
+                      <button
+                        type="button"
+                        class="split-time-dropdown-toggle"
+                        tabindex="-1"
+                        (mousedown)="$event.preventDefault(); toggleDropdown('hour')"
+                      >
+                        ▼
+                      </button>
+                      <div *ngIf="activeDropdown === 'hour'" class="split-time-popover">
+                        <button
+                          *ngFor="let h of hoursOptions"
+                          type="button"
+                          class="split-time-option"
+                          [class.selected]="h === editHour"
+                          (mousedown)="$event.preventDefault(); selectHourOption(h)"
+                        >
+                          {{ h }}
+                        </button>
+                      </div>
+                    </div>
+                    <span class="split-time-colon">:</span>
+                    <div class="split-time-box">
+                      <input
+                        type="text"
+                        inputmode="numeric"
+                        maxlength="2"
+                        class="split-time-field"
+                        placeholder="mm"
+                        [(ngModel)]="editMinute"
+                        (focus)="activeDropdown = 'minute'"
+                        (blur)="handleMinuteBlur()"
+                        (keydown.enter)="commitEditing(day, 'start')"
+                        (keydown.escape)="cancelEditing()"
+                      />
+                      <button
+                        type="button"
+                        class="split-time-dropdown-toggle"
+                        tabindex="-1"
+                        (mousedown)="$event.preventDefault(); toggleDropdown('minute')"
+                      >
+                        ▼
+                      </button>
+                      <div *ngIf="activeDropdown === 'minute'" class="split-time-popover">
+                        <button
+                          *ngFor="let m of minutesOptions"
+                          type="button"
+                          class="split-time-option"
+                          [class.selected]="m === editMinute"
+                          (mousedown)="$event.preventDefault(); selectMinuteOption(m)"
+                        >
+                          {{ m }}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    class="override-action-btn save"
+                    (click)="commitEditing(day, 'start')"
+                    title="Save start override"
+                  >
+                    ✓
+                  </button>
+                  <button
+                    type="button"
+                    class="override-action-btn cancel"
+                    (click)="cancelEditing($event)"
+                    title="Cancel"
+                  >
+                    ✕
+                  </button>
+                  <button
+                    *ngIf="day.isStartOverridden"
+                    type="button"
+                    class="override-action-btn reset"
+                    (click)="resetOverride($event, day, 'start'); cancelEditing()"
+                    title="Reset to default startup event"
+                  >
+                    ↺
+                  </button>
+                </div>
+                <span *ngIf="editError" class="override-error-msg">{{ editError }}</span>
+              </div>
+
+              <ng-template #startDisplay>
+                <div class="time-cell-wrapper">
+                  <div
+                    *ngIf="day.startWorkTime !== '—'; else addStartBtn"
+                    class="time-pill start editable"
+                    [class.overridden]="day.isStartOverridden"
+                    (click)="startEditing($event, day, 'start')"
+                    [title]="day.isStartOverridden ? 'User override (24h) — click to edit' : 'Click to override start time (24h)'"
+                  >
+                    <img [src]="startDoorIcon" alt="" class="time-icon" />
+                    <span class="timestamp-mono">{{ day.startWorkTime }}</span>
+                    <span *ngIf="day.isStartOverridden" class="override-dot" title="User overridden"></span>
+                  </div>
+                  <ng-template #addStartBtn>
+                    <button
+                      class="add-override-btn"
+                      (click)="startEditing($event, day, 'start')"
+                      title="Set manual start time (24h)"
+                    >
+                      — <span class="edit-hint">Edit</span>
+                    </button>
+                  </ng-template>
+
+                  <button
+                    *ngIf="day.date === todayStr && !day.isStartOverridden"
+                    type="button"
+                    class="quick-clock-btn start-now-btn"
+                    (click)="startWorkDayNow($event, day)"
+                    title="Start workday now (override start with current time)"
+                    aria-label="Start workday now"
+                  >
+                    <img [src]="playIcon" alt="" />
+                  </button>
+                </div>
+              </ng-template>
+            </td>
+
+            <!-- BREAKS CELL -->
+            <td class="cell-time" (click)="$event.stopPropagation()">
+              <div
+                *ngIf="day.startWorkTime !== '—' || day.customBreaks.length > 0 || addingBreakDate === day.date; else noBreaks"
+                class="breaks-cell-container"
+              >
+                <div class="breaks-pills-row">
+                  <div
+                    *ngIf="day.startWorkTime !== '—'"
+                    class="time-pill lunch"
+                    [class.not-deducted]="day.lunchDeductedSeconds === 0"
+                    [title]="
+                      day.lunchDeductedSeconds > 0
+                        ? 'Default lunch: deducted ' + day.lunchDeductedFormatted + ' from worked hours'
+                        : 'Default lunch: no overlap with worked hours (0m deducted)'
+                    "
+                  >
+                    <img [src]="lunchPlateIcon" alt="" class="time-icon" />
+                    <span class="timestamp-mono">{{ day.lunchWindow }}</span>
+                  </div>
+
+                  <div
+                    *ngFor="let cb of day.customBreaks; let bIdx = index"
+                    class="time-pill custom-break"
+                    [title]="getBreakIconLabel(cb.icon) + ' (' + cb.start + ' – ' + cb.end + ')'"
+                  >
+                    <app-break-icon-picker
+                      [value]="cb.icon"
+                      (iconChange)="updateCustomBreakIcon(day, bIdx, $event)"
+                    ></app-break-icon-picker>
+                    <span class="timestamp-mono">{{ cb.start }} – {{ cb.end }}</span>
+                    <button
+                      type="button"
+                      class="remove-break-btn"
+                      (click)="removeCustomBreak($event, day, bIdx)"
+                      title="Remove custom break"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <button
+                    *ngIf="addingBreakDate !== day.date"
+                    type="button"
+                    class="add-break-pill-btn"
+                    (click)="openAddBreak($event, day.date)"
+                    title="Add custom break (24h)"
+                  >
+                    + Break
+                  </button>
+                </div>
+
+                <div *ngIf="addingBreakDate === day.date" class="custom-break-editor">
+                  <app-break-icon-picker
+                    [value]="newBreakIcon"
+                    (iconChange)="newBreakIcon = $event"
+                  ></app-break-icon-picker>
+                  <input
+                    type="text"
+                    class="override-time-input break-input"
+                    [(ngModel)]="newBreakStart"
+                    (ngModelChange)="breakError = null"
+                    placeholder="HH:mm"
+                    (keydown.enter)="commitAddBreak(day)"
+                    (keydown.escape)="cancelAddBreak()"
+                  />
+                  <span class="break-sep">–</span>
+                  <input
+                    type="text"
+                    class="override-time-input break-input"
+                    [(ngModel)]="newBreakEnd"
+                    (ngModelChange)="breakError = null"
+                    placeholder="HH:mm"
+                    (keydown.enter)="commitAddBreak(day)"
+                    (keydown.escape)="cancelAddBreak()"
+                  />
+                  <button
+                    type="button"
+                    class="override-action-btn save"
+                    (click)="commitAddBreak(day)"
+                    title="Add custom break"
+                  >
+                    ✓
+                  </button>
+                  <button
+                    type="button"
+                    class="override-action-btn cancel"
+                    (click)="cancelAddBreak($event)"
+                    title="Cancel"
+                  >
+                    ✕
+                  </button>
+                  <span *ngIf="breakError" class="override-error-msg">{{ breakError }}</span>
+                </div>
+              </div>
+              <ng-template #noBreaks>
+                <span class="missing-time">—</span>
+              </ng-template>
+            </td>
+
+            <!-- END CELL -->
+            <td class="cell-time" (click)="$event.stopPropagation()">
+              <div *ngIf="isEditing(day.date, 'end'); else endDisplay" class="override-editor">
+                <div class="override-editor-row">
+                  <div class="split-time-input-group">
+                    <div class="split-time-box">
+                      <input
+                        type="text"
+                        inputmode="numeric"
+                        maxlength="2"
+                        class="split-time-field"
+                        placeholder="HH"
+                        [(ngModel)]="editHour"
+                        (focus)="activeDropdown = 'hour'"
+                        (blur)="handleHourBlur()"
+                        (keydown.enter)="commitEditing(day, 'end')"
+                        (keydown.escape)="cancelEditing()"
+                      />
+                      <button
+                        type="button"
+                        class="split-time-dropdown-toggle"
+                        tabindex="-1"
+                        (mousedown)="$event.preventDefault(); toggleDropdown('hour')"
+                      >
+                        ▼
+                      </button>
+                      <div *ngIf="activeDropdown === 'hour'" class="split-time-popover">
+                        <button
+                          *ngFor="let h of hoursOptions"
+                          type="button"
+                          class="split-time-option"
+                          [class.selected]="h === editHour"
+                          (mousedown)="$event.preventDefault(); selectHourOption(h)"
+                        >
+                          {{ h }}
+                        </button>
+                      </div>
+                    </div>
+                    <span class="split-time-colon">:</span>
+                    <div class="split-time-box">
+                      <input
+                        type="text"
+                        inputmode="numeric"
+                        maxlength="2"
+                        class="split-time-field"
+                        placeholder="mm"
+                        [(ngModel)]="editMinute"
+                        (focus)="activeDropdown = 'minute'"
+                        (blur)="handleMinuteBlur()"
+                        (keydown.enter)="commitEditing(day, 'end')"
+                        (keydown.escape)="cancelEditing()"
+                      />
+                      <button
+                        type="button"
+                        class="split-time-dropdown-toggle"
+                        tabindex="-1"
+                        (mousedown)="$event.preventDefault(); toggleDropdown('minute')"
+                      >
+                        ▼
+                      </button>
+                      <div *ngIf="activeDropdown === 'minute'" class="split-time-popover">
+                        <button
+                          *ngFor="let m of minutesOptions"
+                          type="button"
+                          class="split-time-option"
+                          [class.selected]="m === editMinute"
+                          (mousedown)="$event.preventDefault(); selectMinuteOption(m)"
+                        >
+                          {{ m }}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    class="override-action-btn save"
+                    (click)="commitEditing(day, 'end')"
+                    title="Save end override"
+                  >
+                    ✓
+                  </button>
+                  <button
+                    type="button"
+                    class="override-action-btn cancel"
+                    (click)="cancelEditing($event)"
+                    title="Cancel"
+                  >
+                    ✕
+                  </button>
+                  <button
+                    *ngIf="day.isEndOverridden"
+                    type="button"
+                    class="override-action-btn reset"
+                    (click)="resetOverride($event, day, 'end'); cancelEditing()"
+                    title="Reset to default shutdown event"
+                  >
+                    ↺
+                  </button>
+                </div>
+                <span *ngIf="editError" class="override-error-msg">{{ editError }}</span>
+              </div>
+
+              <ng-template #endDisplay>
+                <div class="time-cell-wrapper">
+                  <div
+                    *ngIf="day.endWorkTime !== '—' && day.endWorkTime !== 'In Progress'; else notCompletedEnd"
+                    class="time-pill end editable"
+                    [class.overridden]="day.isEndOverridden"
+                    (click)="startEditing($event, day, 'end')"
+                    [title]="day.isEndOverridden ? 'User override (24h) — click to edit' : 'Click to override end time (24h)'"
+                  >
+                    <img [src]="endDoorIcon" alt="" class="time-icon" />
+                    <span class="timestamp-mono">{{ day.endWorkTime }}</span>
+                    <span *ngIf="day.isEndOverridden" class="override-dot" title="User overridden"></span>
+                  </div>
+                  <ng-template #notCompletedEnd>
+                    <div
+                      *ngIf="day.status === 'in_progress'; else addEndBtn"
+                      class="time-pill in-progress editable"
+                      (click)="startEditing($event, day, 'end')"
+                      title="Click to set manual end time (24h)"
+                    >
+                      <span class="pulsing-circle"></span>
+                      <span class="active-tag">Active Today</span>
+                    </div>
+                    <ng-template #addEndBtn>
+                      <button
+                        class="add-override-btn"
+                        (click)="startEditing($event, day, 'end')"
+                        title="Set manual end time (24h)"
+                      >
+                        — <span class="edit-hint">Edit</span>
+                      </button>
+                    </ng-template>
+                  </ng-template>
+
+                  <button
+                    *ngIf="day.date === todayStr && !day.isEndOverridden"
+                    type="button"
+                    class="quick-clock-btn end-now-btn"
+                    (click)="endWorkDayNow($event, day)"
+                    title="End workday now (override end with current time)"
+                    aria-label="End workday now"
+                  >
+                    <img [src]="stopIcon" alt="" />
+                  </button>
+                </div>
+              </ng-template>
+            </td>
+
+            <!-- DURATION CELL -->
+            <td class="cell-duration">
+              <div class="duration-container">
+                <div style="display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.4rem">
+                  <span class="duration-text">{{ day.durationFormatted }}</span>
+                  <span
+                    *ngIf="day.lunchDeductedSeconds > 0"
+                    class="date-raw"
+                    [title]="'Lunch deducted: ' + day.lunchDeductedFormatted"
+                  >
+                    (-{{ day.lunchDeductedFormatted }} lunch)
+                  </span>
+                  <span
+                    *ngIf="day.customBreaksDeductedSeconds > 0"
+                    class="date-raw"
+                    style="color: #38bdf8"
+                    [title]="'Custom breaks deducted: ' + day.customBreaksDeductedFormatted"
+                  >
+                    (-{{ day.customBreaksDeductedFormatted }} break)
+                  </span>
+                </div>
+                <div *ngIf="day.durationSeconds > 0" class="duration-bar-track">
+                  <div
+                    class="duration-bar-fill"
+                    [class.overtime]="day.durationSeconds >= 28800"
+                    [style.width.%]="getDurationPercent(day.durationSeconds)"
+                  ></div>
+                </div>
+              </div>
+            </td>
+
+            <!-- SALDO CELL -->
+            <td class="cell-saldo">
+              <span *ngIf="day.expectedWorkSeconds === 0 && day.durationSeconds === 0; else saldoValue" class="missing-time">—</span>
+              <ng-template #saldoValue>
+                <span
+                  class="saldo-badge"
+                  [ngClass]="day.workBalanceSeconds >= 0 ? 'positive' : 'negative'"
+                  [title]="day.durationFormatted + ' worked vs. ' + (day.expectedWorkSeconds / 3600) + 'h expected'"
+                >
+                  {{ day.workBalanceFormatted }}
+                </span>
+              </ng-template>
+            </td>
+
+            <!-- EXPAND CHEVRON -->
+            <td class="cell-expand">
+              <button
+                class="expand-btn"
+                [class.open]="expandedDay === day.date"
+                aria-label="Toggle event log details"
+              >
+                ▼
+              </button>
+            </td>
+          </tr>
+
+          <!-- EXPANDED DETAILS ROW -->
+          <tr *ngIf="expandedDay === day.date" class="detail-row">
+            <td colspan="8">
+              <div class="detail-panel">
+                <div class="detail-header">
+                  <div class="detail-header-title">
+                    <h4>Work Summary &amp; Overrides for {{ day.formattedDate }}</h4>
+                    <span class="detail-meta">
+                      Gross: {{ (day.grossDurationSeconds / 3600).toFixed(2) }}h •
+                      Lunch deducted: {{ day.lunchDeductedFormatted }} •
+                      Custom breaks deducted: {{ day.customBreaksDeductedFormatted }} •
+                      Net: {{ day.durationFormatted }}
+                    </span>
+                  </div>
+                  <div class="detail-header-actions">
+                    <button
+                      *ngIf="onSaveOverride"
+                      type="button"
+                      class="btn btn-sm"
+                      [ngClass]="day.isVacation ? 'btn-secondary' : 'btn-primary'"
+                      (click)="toggleVacation($event, day)"
+                    >
+                      {{ day.isVacation ? '✕ Remove Vacation' : '☀ Mark as Vacation' }}
+                    </button>
+                  </div>
+                </div>
+
+                <div class="breakdown-header">
+                  <h4>System Event Timeline for {{ day.formattedDate }}</h4>
+                  <span class="breakdown-hint">All recorded Windows start &amp; end events</span>
+                </div>
+
+                <p *ngIf="day.allEvents.length === 0" class="breakdown-hint" style="padding-left: 0.5rem">
+                  No startup, logon, sleep, or shutdown events recorded on this day.
+                </p>
+
+                <div *ngIf="day.allEvents.length > 0" class="timeline-list">
+                  <div
+                    *ngFor="let ev of day.allEvents"
+                    class="timeline-item"
+                    [ngClass]="isStart(ev) ? 'startup' : 'shutdown'"
+                    [class.active-event]="isActiveStart(day, ev) || isActiveEnd(day, ev)"
+                  >
+                    <div class="timeline-marker">
+                      <span class="timeline-dot"></span>
+                    </div>
+                    <div class="timeline-body">
+                      <div class="timeline-badge-title">
+                        <span class="event-name-tag" [ngClass]="isStart(ev) ? 'startup' : 'shutdown'">
+                          {{ ev.name.toUpperCase() }}
+                        </span>
+                        <span class="event-type-badge" [ngClass]="isStart(ev) ? 'start' : 'end'">
+                          {{ isStart(ev) ? 'START' : 'END' }}
+                        </span>
+                        <span *ngIf="isActiveStart(day, ev)" class="first-last-tag active-work-tag start">
+                          {{ day.isStartOverridden ? 'Selected as Start of Work' : 'Default Start of Work' }}
+                        </span>
+                        <span *ngIf="isActiveEnd(day, ev)" class="first-last-tag active-work-tag end">
+                          {{ day.isEndOverridden ? 'Selected as End of Work' : 'Default End of Work' }}
+                        </span>
+                        <span *ngIf="isDefaultStart(day, ev) && !isActiveStart(day, ev)" class="first-last-tag default-hint">
+                          Default Start
+                        </span>
+                        <span *ngIf="isDefaultEnd(day, ev) && !isActiveEnd(day, ev)" class="first-last-tag default-hint">
+                          Default End
+                        </span>
+                      </div>
+                      <div class="timeline-actions-group">
+                        <span class="timeline-time">{{ ev.timestamp }}</span>
+                        <div *ngIf="onSaveOverride" class="timeline-buttons">
+                          <ng-container *ngIf="isStart(ev)">
+                            <button
+                              *ngIf="!isActiveStart(day, ev); else resetStartIfOverridden"
+                              type="button"
+                              class="timeline-btn select-start"
+                              (click)="selectEventAsStart($event, day, ev)"
+                              [title]="'Set ' + ev.name + ' at ' + formatEvTime(ev.timestamp) + ' as Start of Work'"
+                            >
+                              Set as Start
+                            </button>
+                            <ng-template #resetStartIfOverridden>
+                              <button
+                                *ngIf="day.isStartOverridden"
+                                type="button"
+                                class="timeline-btn reset"
+                                (click)="resetOverride($event, day, 'start')"
+                                title="Reset Start of Work to default event"
+                              >
+                                Reset Start
+                              </button>
+                            </ng-template>
+                          </ng-container>
+
+                          <ng-container *ngIf="isEnd(ev)">
+                            <button
+                              *ngIf="!isActiveEnd(day, ev); else resetEndIfOverridden"
+                              type="button"
+                              class="timeline-btn select-end"
+                              (click)="selectEventAsEnd($event, day, ev)"
+                              [title]="'Set ' + ev.name + ' at ' + formatEvTime(ev.timestamp) + ' as End of Work'"
+                            >
+                              Set as End
+                            </button>
+                            <ng-template #resetEndIfOverridden>
+                              <button
+                                *ngIf="day.isEndOverridden"
+                                type="button"
+                                class="timeline-btn reset"
+                                (click)="resetOverride($event, day, 'end')"
+                                title="Reset End of Work to default event"
+                              >
+                                Reset End
+                              </button>
+                            </ng-template>
+                          </ng-container>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </td>
+          </tr>
+        </ng-container>
+      </tbody>
+    </table>
+  </div>
+</div>

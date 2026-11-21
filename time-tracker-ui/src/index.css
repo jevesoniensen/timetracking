@@ -361,7 +361,8 @@ body {
   background: rgba(15, 23, 42, 0.98);
 }
 
-.timeline-nav-btn svg {
+.timeline-nav-btn svg,
+.timeline-nav-btn img {
   width: 15px;
   height: 15px;
 }
@@ -500,7 +501,8 @@ body {
   flex-shrink: 0;
 }
 
-.metric-icon-box svg {
+.metric-icon-box svg,
+.metric-icon-box img {
   width: 18px;
   height: 18px;
 }
@@ -918,7 +920,8 @@ body {
   padding: 0;
 }
 
-.quick-clock-btn svg {
+.quick-clock-btn svg,
+.quick-clock-btn img {
   width: 13px;
   height: 13px;
 }
@@ -1955,7 +1958,8 @@ body {
   flex-shrink: 0;
 }
 
-.modal-icon-badge svg {
+.modal-icon-badge svg,
+.modal-icon-badge img {
   width: 20px;
   height: 20px;
 }

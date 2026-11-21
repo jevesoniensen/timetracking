@@ -12,14 +12,16 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "@angular/common": "^19.2.0",
+    "@angular/compiler": "^19.2.0",
+    "@angular/core": "^19.2.0",
+    "@angular/forms": "^19.2.0",
+    "@angular/platform-browser": "^19.2.0",
+    "rxjs": "^7.8.2",
+    "zone.js": "^0.15.0"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
-    "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.7",
-    "@vitejs/plugin-react": "^6.1.1",
     "oxlint": "^1.81.0",
     "typescript": "~6.0.2",
     "vite": "^8.3.0"

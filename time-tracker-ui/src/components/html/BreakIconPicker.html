@@ -1,0 +1,24 @@
+<div class="break-icon-picker" (click)="$event.stopPropagation()">
+  <button
+    type="button"
+    [class]="buttonClassName"
+    (click)="toggleOpen()"
+    [title]="title || (currentLabel + ' — click to change icon')"
+    [attr.aria-label]="'Break icon: ' + currentLabel"
+  >
+    <app-break-icon [type]="current"></app-break-icon>
+  </button>
+  <div *ngIf="isOpen" class="break-icon-popover" role="menu">
+    <button
+      *ngFor="let opt of options"
+      type="button"
+      class="break-icon-option"
+      [class.active]="current === opt.id"
+      (click)="selectOption(opt.id)"
+      [title]="opt.label"
+      [attr.aria-label]="opt.label"
+    >
+      <app-break-icon [type]="opt.id"></app-break-icon>
+    </button>
+  </div>
+</div>

@@ -1,0 +1,79 @@
+<div *ngIf="months.length > 0" class="month-selector-container">
+  <div
+    *ngIf="overallSaldo"
+    class="month-tab general-saldo-badge"
+    [style.cursor]="'default'"
+    [style.borderColor]="isOverallPositive ? 'rgba(52, 211, 153, 0.35)' : 'rgba(248, 113, 113, 0.35)'"
+    [style.background]="isOverallPositive ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)'"
+    [title]="'General Saldo across ' + overallSaldo.monthsCount + ' month(s): ' + overallSaldo.totalWorkFormatted + ' worked vs. ' + overallSaldo.expectedWorkFormatted + ' expected (excl. today)'"
+  >
+    <span class="month-name" style="color: #f8fafc">
+      General Saldo:
+      <span
+        [style.color]="isOverallPositive ? '#34d399' : '#f87171'"
+        style="font-family: var(--font-mono)"
+      >
+        {{ overallSaldo.workBalanceFormatted }}
+      </span>
+    </span>
+    <span class="month-chip">
+      {{ overallSaldo.monthsCount }} {{ overallSaldo.monthsCount === 1 ? 'month' : 'months' }} •
+      {{ overallSaldo.totalWorkFormatted }} / {{ overallSaldo.expectedWorkFormatted }}
+    </span>
+  </div>
+
+  <div class="month-timeline-wrapper">
+    <button
+      *ngIf="canScrollLeft"
+      type="button"
+      class="timeline-nav-btn left"
+      (click)="scrollTimeline('left')"
+      title="Show newer months"
+      aria-label="Scroll timeline left"
+    >
+      <img [src]="chevronLeftIcon" alt="" />
+    </button>
+
+    <div
+      #timelineEl
+      class="month-timeline"
+      role="tablist"
+      aria-label="Select Month"
+      (scroll)="updateScrollButtons()"
+      (wheel)="handleWheel($event)"
+    >
+      <button
+        *ngFor="let m of months"
+        role="tab"
+        [attr.aria-selected]="m.monthKey === activeMonth"
+        class="month-tab timeline-item"
+        [class.active]="m.monthKey === activeMonth"
+        (click)="selectMonth.emit(m.monthKey)"
+      >
+        <span class="timeline-node" aria-hidden="true"></span>
+        <span class="month-name">{{ m.monthLabel }}</span>
+        <span class="month-chip">
+          {{ m.activeDaysCount }} days • {{ m.totalWorkFormatted }}
+          <span
+            [style.color]="m.workBalanceSeconds >= 0 ? '#34d399' : '#f87171'"
+            style="font-weight: 700"
+            [title]="'Month Saldo: ' + m.workBalanceFormatted + ' (vs. ' + m.expectedWorkFormatted + ' expected)'"
+          >
+            ({{ m.workBalanceFormatted }})
+          </span>
+        </span>
+      </button>
+    </div>
+
+    <button
+      *ngIf="canScrollRight"
+      type="button"
+      class="timeline-nav-btn right"
+      (click)="scrollTimeline('right')"
+      title="Show older months"
+      aria-label="Scroll timeline right"
+    >
+      <img [src]="chevronRightIcon" alt="" />
+    </button>
+  </div>
+</div>
